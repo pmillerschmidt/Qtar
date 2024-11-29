@@ -10,8 +10,8 @@ from visualization import TrainingVisualizer
 
 
 class Qtar:
-    def __init__(self, chord_progression, beats_per_chord=4, use_human_feedback=False):
-        self.env = QtarEnvironment(chord_progression, beats_per_chord, use_human_feedback)
+    def __init__(self, chord_progression, scale='C', beats_per_chord=4, use_human_feedback=False):
+        self.env = QtarEnvironment(chord_progression, scale, beats_per_chord, use_human_feedback)
         self.state_size = len(self.env._get_state())
         self.note_size = 12  # 12 semitones
         self.rhythm_size = len(self.env.rhythm_values)
@@ -63,7 +63,9 @@ class Qtar:
 
     def act(self, state):
         if random.random() <= self.epsilon:
-            note_action = random.randrange(self.note_size)
+            # For random actions, only choose from scale tones
+            valid_notes = [i for i in range(12) if self.env.scale_mask[i] == 1]
+            note_action = random.choice(valid_notes)
             rhythm_action = random.randrange(self.rhythm_size)
             return note_action, rhythm_action
 

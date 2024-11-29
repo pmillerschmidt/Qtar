@@ -24,8 +24,17 @@ class QtarNetwork(nn.Module):
             nn.Linear(32, rhythm_size)
         )
 
-    def forward(self, x):
+    def forward(self, x, key_mask=None):
         shared_features = self.shared_layers(x)
-        note_output = self.note_head(shared_features)
-        rhythm_output = self.rhythm_head(shared_features)
-        return note_output, rhythm_output
+        note_logits = self.note_head(shared_features)
+        rhythm_logits = self.rhythm_head(shared_features)
+
+        # Apply key mask
+        if key_mask is not None:
+            # Set logits of invalid notes to a very negative value
+            masked_note_logits = note_logits.clone()
+            masked_note_logits[:, :12] = note_logits[:, :12].masked_fill((key_mask == 0), float('-inf'))
+        else:
+            masked_note_logits = note_logits
+
+        return masked_note_logits, rhythm_logits

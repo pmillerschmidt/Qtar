@@ -12,3 +12,7 @@ SCALE_DEGREES = {
     'F': [5, 7, 9, 10, 0, 2, 4],  # F major scale
     'G': [7, 9, 11, 0, 2, 4, 6]   # G major scale
 }
+
+KEY_MASKS = {
+    'C': [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]
+}
