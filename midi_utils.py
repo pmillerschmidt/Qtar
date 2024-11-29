@@ -1,12 +1,8 @@
+import os
+import pretty_midi
+
 
 def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_note=60):
-    """Convert the generated solo and chord progression to a MIDI file with two tracks"""
-    try:
-        import pretty_midi
-    except ImportError:
-        print("please install pretty_midi: pip install pretty_midi")
-        return
-
     pm = pretty_midi.PrettyMIDI()
 
     # Create guitar track for the solo
@@ -85,3 +81,30 @@ def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_no
     pm.write(filename)
     print(f"MIDI file saved as {filename}")
 
+def save_midi(epoch, env):
+    """Save the current melody as a MIDI file using pretty_midi"""
+    if not os.path.exists('midi'):
+        os.makedirs('midi')  # Ensure the midi folder exists
+
+    midi_filename = f"midi/epoch_{epoch}.mid"
+
+    # Create a PrettyMIDI object
+    midi_data = pretty_midi.PrettyMIDI()
+
+    # Create an instrument (for example, Electric Piano)
+    instrument = pretty_midi.Instrument(program=12)  # Program 12 corresponds to Electric Piano
+
+    # Add notes from the current melody to the instrument
+    for note, duration, beat_position in env.current_melody:
+        # Convert the note and duration into a PrettyMIDI note
+        start_time = beat_position * 60 / env.beats_per_chord  # Convert to seconds (assuming 120 bpm)
+        end_time = start_time + (duration * 60 / env.beats_per_chord)
+        midi_note = pretty_midi.Note(velocity=100, pitch=int(note), start=start_time, end=end_time)
+        instrument.notes.append(midi_note)
+
+    # Add the instrument to the PrettyMIDI object
+    midi_data.instruments.append(instrument)
+
+    # Write the MIDI data to file
+    midi_data.write(midi_filename)
+    print(f"Saved MIDI file for epoch {epoch} to {midi_filename}")

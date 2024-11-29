@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from agent import Qtar
 import threading
 import queue
 import os
+from music_theory import C_MAJOR_KEY_MASK
+from agent import Qtar
+
 
 # Create a queue for feedback
 feedback_queue = queue.Queue()
@@ -25,7 +27,7 @@ chord_progression = ['C', 'Am', 'F', 'G']
 qtar = Qtar(chord_progression, use_human_feedback=True)
 
 # Load model if exists
-PRETRAINED_MODEL_PATH =  "models/pretrained_qtar_model.pt"
+PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 MODEL_PATH = "models/trained_qtar_model.pt"
 if os.path.exists(PRETRAINED_MODEL_PATH):
     print(f"Loading existing model from {PRETRAINED_MODEL_PATH}")
@@ -81,10 +83,10 @@ async def start_training():
     try:
         print("Starting training episode...")
         # Generate a solo for feedback first
-        solo = qtar.generate_solo(chord_progression)
+        solo = qtar.generate_solo(key_mask=C_MAJOR_KEY_MASK)
         get_current_solo.current_solo = solo
 
-        # Do a small training step
+        # Incorporate motif-based feedback during training
         qtar.train_extensive(total_epochs=1, episodes_per_epoch=1)
 
         # Generate new solo after training
