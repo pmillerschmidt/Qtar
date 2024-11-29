@@ -17,7 +17,8 @@ class Qtar:
                  progression_type='I_VI_IV_V',
                  beats_per_chord=4,
                  use_human_feedback=False,
-                 training_phase=1
+                 training_phase=1,
+                 early_stopping=False
                  ):
         self.scale = scale
         self.chord_progression = PROGRESSIONS[progression_type]
@@ -53,6 +54,7 @@ class Qtar:
             patience=5,
             verbose=True
         )
+        self.early_stopping = early_stopping
         self.training_history = []
         self.phase_history = []
 
@@ -292,11 +294,11 @@ class Qtar:
             else:
                 patience_counter += 1
 
-            if patience_counter >= 100:  # Early stopping
+            if patience_counter >= 100 and self.early_stopping:  # Early stopping
                 print("Early stopping triggered")
                 break
 
-        return self.training_history
+        return self.training_history, self.phase_history
 
     def generate_solo(self):
         """Generate a solo over the given chord progression"""

@@ -172,3 +172,46 @@ def create_phase_analysis(training_history, phase_history):
     plt.tight_layout()
     plt.savefig('phase_analysis.png', bbox_inches='tight', dpi=300)
 
+
+def create_phase_training_visualization(phase_history):
+    """Create visualization showing training progress for each phase"""
+    plt.figure(figsize=(15, 10))
+
+    # Plot rewards for each phase in different colors
+    colors = ['blue', 'green', 'red', 'purple']
+    for phase in range(1, 5):
+        phase_data = [entry for entry in phase_history if entry['phase'] == phase]
+        if phase_data:
+            epochs = range(len(phase_data))
+            rewards = [entry['avg_reward'] for entry in phase_data]
+
+            # Plot raw data with low alpha
+            plt.plot(epochs, rewards, color=colors[phase - 1], alpha=0.2,
+                     label=f'Phase {phase} Raw')
+
+            # Plot smoothed data
+            smoothed = smooth_curve(rewards)
+            plt.plot(epochs, smoothed, color=colors[phase - 1],
+                     label=f'Phase {phase} Smoothed')
+
+    plt.title('Training Progress by Phase')
+    plt.xlabel('Epochs')
+    plt.ylabel('Average Reward')
+    plt.grid(True)
+    plt.legend()
+
+    # Add phase descriptions
+    phase_info = (
+        "Phase 1: Basic Harmony & Rhythm\n"
+        "Phase 2: Voice Leading\n"
+        "Phase 3: Rhythm Patterns & Variety\n"
+        "Phase 4: Motifs & Structure"
+    )
+    plt.text(1.15, 0.5, phase_info, transform=plt.gca().transAxes,
+             bbox=dict(facecolor='white', alpha=0.8),
+             verticalalignment='center')
+
+    plt.tight_layout()
+    plt.savefig('phase_training_progress.png', bbox_inches='tight', dpi=300)
+
+

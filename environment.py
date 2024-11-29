@@ -65,7 +65,7 @@ class QtarEnvironment:
                 'basic_rhythm': 2.0,
                 'enhanced_rhythm': 0.0,
                 'voice_leading': 0.0,
-                'note_variety': 0.0,
+                'note_variety': 1.0,
                 'motifs': 0.0,
                 'phrase': 0.0
             }
@@ -75,7 +75,7 @@ class QtarEnvironment:
                 'basic_rhythm': 2.0,
                 'enhanced_rhythm': 0.0,
                 'voice_leading': 1.5,
-                'note_variety': 0.0,
+                'note_variety': 2.0,
                 'motifs': 0.0,
                 'phrase': 0.0
             }
