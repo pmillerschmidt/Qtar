@@ -80,11 +80,7 @@ def phase_meets_criteria(phase_number, avg_reward, training_history):
     stability = np.std(recent_rewards) if recent_rewards else float('inf')
     recent_avg = np.mean(recent_rewards) if recent_rewards else float('-inf')
     if phase_number == 1:
-        return (len(training_history) >= min_epochs[1] and
-                avg_reward > 1.0 and
-                stability < 0.2 and
-                recent_avg > 0.8 and
-                min(recent_rewards) > 0.5)
+        return avg_reward > 1.0 and stability < 0.2 and recent_avg > 0.8
     elif phase_number == 2:
         return avg_reward > 1.0 and stability < 0.3
     elif phase_number == 3:

@@ -61,9 +61,10 @@ class QtarEnvironment:
         """Initialize weights based on training phase"""
         if self.training_phase == 1:
             self.weights = {
-                'harmony': 3.0,
+                'basic_harmony': 3.0,
                 'basic_rhythm': 2.0,
-                'enhanced_rhythm': 0.0,
+                'advanced_harmony': 1.0,
+                'advanced_rhythm': 0.0,
                 'voice_leading': 0.0,
                 'note_variety': 1.0,
                 'motifs': 0.0,
@@ -71,9 +72,10 @@ class QtarEnvironment:
             }
         elif self.training_phase == 2:
             self.weights = {
-                'harmony': 2.5,
+                'basic_harmony': 2.5,
                 'basic_rhythm': 2.0,
-                'enhanced_rhythm': 0.0,
+                'advanced_harmony': 1.0,
+                'advanced_rhythm': 0.0,
                 'voice_leading': 1.5,
                 'note_variety': 2.0,
                 'motifs': 0.0,
@@ -81,9 +83,10 @@ class QtarEnvironment:
             }
         elif self.training_phase == 3:
             self.weights = {
-                'harmony': 2.0,
+                'basic_harmony': 2.0,
                 'basic_rhythm': 1.5,
-                'enhanced_rhythm': 2.0,
+                'advanced_harmony': 1.0,
+                'advanced_rhythm': 2.0,
                 'voice_leading': 1.5,
                 'note_variety': 1.0,
                 'motifs': 0.0,
@@ -91,9 +94,10 @@ class QtarEnvironment:
             }
         elif self.training_phase == 4:
             self.weights = {
-                'harmony': 2.0,
+                'basic_harmony': 2.0,
                 'basic_rhythm': 1.5,
-                'enhanced_rhythm': 2.0,
+                'advanced_rhythm': 2.0,
+                'advanced_harmony': 1.0,
                 'voice_leading': 1.5,
                 'note_variety': 1.0,
                 'motifs': 1.5,
@@ -101,9 +105,10 @@ class QtarEnvironment:
             }
         else:  # Phase 5 (full)
             self.weights = {
-                'harmony': 2.0,
+                'basic_harmony': 2.0,
                 'basic_rhythm': 1.5,
-                'enhanced_rhythm': 2.0,
+                'advanced_rhythm': 2.0,
+                'advanced_harmony': 1.0,
                 'voice_leading': 1.5,
                 'note_variety': 1.0,
                 'motifs': 2.0,
@@ -192,24 +197,14 @@ class QtarEnvironment:
         reward = 0
         note_in_octave = note % 12
         # harmonic and rhythmic reward
-        reward += self._basic_harmony_reward(chord, note_in_octave) * w['harmony']
+        reward += self._basic_harmony_reward(chord, note_in_octave) * w['basic_harmony']
         reward +=  self._basic_rhythm_reward(rhythm) * w['basic_rhythm']
-        # phase two -> introduce voice leading
-        if self.training_phase >= 2:
-            reward += self._voice_leading_reward(note) * w['voice_leading']
-            reward += self._enhanced_harmony_reward(chord, note) * w['harmony']
-        # Phase 3: Add Enhanced Rhythm and Note Variety
-        if self.training_phase >= 3:
-            reward += self._rhythm_pattern_reward(rhythm) * w['enhanced_rhythm']
-            reward += self._note_variety_reward(note) * w['note_variety']
-        # Phase 4: Add Basic Motifs
-        if self.training_phase >= 4:
-            reward += self._basic_motif_reward() * w['motifs']
-            reward += self._basic_phrase_reward() * w['phrase']
-        # Phase 5: Full Complexity
-        if self.training_phase >= 5:
-            reward += self._complex_motif_reward() * w['motifs']
-            reward += self._phrase_structure_reward() * w['phrase']
+        reward += self._note_variety_reward(note) * w['note_variety']
+        reward += self._voice_leading_reward(note) * w['voice_leading']
+        reward += self._advanced_harmony_reward(chord, note) * w['advanced_harmony']
+        reward += self._advanced_rhythm_reward(rhythm) * w['advanced_rhythm']
+        reward += self._basic_motif_reward() * w['motifs']
+        reward += self._basic_phrase_reward() * w['phrase']
         return reward
 
     def _basic_harmony_reward(self, chord, note):
@@ -229,7 +224,7 @@ class QtarEnvironment:
             return 1.0 if rhythm >= 1.0 else -0.5
         return 0.5 if rhythm <= 0.5 else 0.0
 
-    def _enhanced_harmony_reward(self, chord, note):
+    def _advanced_harmony_reward(self, chord, note):
         """Phase 2: More sophisticated harmony rules"""
         note_in_octave = note % 12
         chord_tones = CHORD_TONES[chord]
@@ -263,7 +258,7 @@ class QtarEnvironment:
             return -2.0  # Penalize large leaps
         return 0.0
 
-    def _rhythm_pattern_reward(self, rhythm):
+    def _advanced_rhythm_reward(self, rhythm):
         """Evaluate rhythm patterns and their development"""
         if len(self.current_melody) < 4:
             return 0.0
