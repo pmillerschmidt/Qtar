@@ -6,6 +6,7 @@ from collections import deque
 import random
 from environment import QtarEnvironment
 from model import QtarNetwork
+from music_theory import C_MAJOR_KEY_MASK
 from visualization import TrainingVisualizer
 from midi_utils import save_midi
 
@@ -178,7 +179,7 @@ class Qtar:
 
         return self.training_history
 
-    def generate_solo(self, key_mask=None):
+    def generate_solo(self, key_mask=C_MAJOR_KEY_MASK):
         state = self.env.reset()
         melody = []
 

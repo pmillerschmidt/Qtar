@@ -3,6 +3,8 @@ from midi_utils import convert_to_midi
 import argparse
 import os
 
+from music_theory import C_MAJOR_KEY_MASK
+
 
 def main():
     parser = argparse.ArgumentParser(description='Generate music with Q-tar')
@@ -28,7 +30,7 @@ def main():
 
     # Generate solo
     print("\nGenerating solo...")
-    solo = qtar.generate_solo(chord_progression)
+    solo = qtar.generate_solo(key_mask=C_MAJOR_KEY_MASK)
 
     # Print the solo in a readable format
     print("\nGenerated Solo:")
