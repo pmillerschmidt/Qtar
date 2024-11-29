@@ -194,7 +194,7 @@ class Qtar:
             else:
                 patience_counter += 1
 
-            if patience_counter >= 50:  # Early stopping
+            if patience_counter >= 100:  # Early stopping
                 print("Early stopping triggered")
                 break
 

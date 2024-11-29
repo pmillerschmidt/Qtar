@@ -6,7 +6,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description='Generate music with Q-tar')
-    parser.add_argument('--model_path', type=str, default='models/qtar_model.pt',
+    parser.add_argument('--model_path', type=str, default='models/pretrained_qtar_model.pt',
                         help='Path to saved model')
     parser.add_argument('--output', type=str, default='qtar_solo.mid',
                         help='Output MIDI file path')

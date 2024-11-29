@@ -11,7 +11,7 @@ def pretrain():
     # Initialize model
     qtar = Qtar(scale='C_MAJOR', progression_type='I_VI_IV_V', use_human_feedback=False)
     # Training parameters
-    total_epochs = 300
+    total_epochs = 100
     episodes_per_epoch = 100
     print("Starting pretraining...")
     try:
