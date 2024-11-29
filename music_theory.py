@@ -1,3 +1,5 @@
+import torch
+
 # Chord definitions
 CHORD_TONES = {
     'C': [0, 4, 7],    # C E G
@@ -12,3 +14,6 @@ SCALE_DEGREES = {
     'F': [5, 7, 9, 10, 0, 2, 4],  # F major scale
     'G': [7, 9, 11, 0, 2, 4, 6]   # G major scale
 }
+
+C_MAJOR_KEY_MASK = torch.tensor([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1], dtype=torch.float32)
+

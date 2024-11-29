@@ -2,6 +2,7 @@ from agent import Qtar
 import os
 import matplotlib.pyplot as plt
 from visualization import TrainingVisualizer
+from music_theory import C_MAJOR_KEY_MASK
 
 def pretrain():
     # Initialize model
@@ -16,10 +17,11 @@ def pretrain():
 
     print("Starting pretraining...")
     try:
-        # Single call to train_extensive
+        # Pass key_mask to train_extensive
         training_history = qtar.train_extensive(
             total_epochs=total_epochs,
-            episodes_per_epoch=episodes_per_epoch
+            episodes_per_epoch=episodes_per_epoch,
+            key_mask= C_MAJOR_KEY_MASK
         )
 
         print("\nTraining complete! Saving model and plots...")
@@ -61,7 +63,6 @@ def pretrain():
         os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
         qtar.save_model(MODEL_PATH)
         print(f"Model saved to {MODEL_PATH}")
-
 
 if __name__ == "__main__":
     pretrain()

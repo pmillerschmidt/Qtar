@@ -6,12 +6,23 @@ from collections import deque
 import random
 from environment import QtarEnvironment
 from model import QtarNetwork
+from music_theory import C_MAJOR_KEY_MASK
 from visualization import TrainingVisualizer
-
+from midi_utils import save_midi
 
 class Qtar:
-    def __init__(self, chord_progression, beats_per_chord=4, use_human_feedback=False):
-        self.env = QtarEnvironment(chord_progression, beats_per_chord, use_human_feedback)
+    def __init__(self,
+                 chord_progression,
+                 scale='C',
+                 beats_per_chord=4,
+                 use_human_feedback=False):
+        # init env
+        self.env = QtarEnvironment(
+            chord_progression=chord_progression,
+            scale=scale,
+            beats_per_chord=beats_per_chord,
+            use_human_feedback=use_human_feedback)
+        # init state
         self.state_size = len(self.env._get_state())
         self.note_size = 12  # 12 semitones
         self.rhythm_size = len(self.env.rhythm_values)
@@ -61,20 +72,22 @@ class Qtar:
     def remember(self, state, actions, reward, next_state, done):
         self.memory.append((state, actions, reward, next_state, done))
 
-    def act(self, state):
+    def act(self, state, key_mask=None):
         if random.random() <= self.epsilon:
-            note_action = random.randrange(self.note_size)
+            # Random action respecting the key
+            valid_notes = [i for i in range(self.note_size) if key_mask is None or key_mask[i] == 1]
+            note_action = random.choice(valid_notes)
             rhythm_action = random.randrange(self.rhythm_size)
             return note_action, rhythm_action
 
         with torch.no_grad():
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
-            note_values, rhythm_values = self.model(state_tensor)
+            note_values, rhythm_values = self.model(state_tensor, key_mask=key_mask)
             note_action = torch.argmax(note_values).item()
             rhythm_action = torch.argmax(rhythm_values).item()
             return note_action, rhythm_action
 
-    def replay(self, batch_size):
+    def replay(self, batch_size, key_mask=None):
         if len(self.memory) < batch_size:
             return
 
@@ -84,13 +97,13 @@ class Qtar:
             if not done:
                 next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0)
                 with torch.no_grad():
-                    next_note_values, next_rhythm_values = self.model(next_state_tensor)
+                    next_note_values, next_rhythm_values = self.model(next_state_tensor, key_mask=key_mask)
                     target = reward + self.gamma * (torch.max(next_note_values).item() +
                                                     torch.max(next_rhythm_values).item()) / 2
 
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
             self.optimizer.zero_grad()
-            note_outputs, rhythm_outputs = self.model(state_tensor)
+            note_outputs, rhythm_outputs = self.model(state_tensor, key_mask=key_mask)
 
             target_note = note_outputs.clone()
             target_rhythm = rhythm_outputs.clone()
@@ -104,7 +117,7 @@ class Qtar:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-    def train_extensive(self, total_epochs, episodes_per_epoch=100):
+    def train_extensive(self, total_epochs, episodes_per_epoch=100, key_mask=None):
         """Train the model over multiple epochs"""
         for epoch in range(total_epochs):
             epoch_rewards = []
@@ -116,7 +129,7 @@ class Qtar:
                 steps = 0
 
                 while True:
-                    note_action, rhythm_action = self.act(state)
+                    note_action, rhythm_action = self.act(state, key_mask=key_mask)
                     next_state, reward, done = self.env.step(note_action, rhythm_action)
                     self.remember(state, (note_action, rhythm_action), reward, next_state, done)
                     state = next_state
@@ -126,7 +139,7 @@ class Qtar:
                     if done:
                         break
 
-                self.replay(32)
+                self.replay(32, key_mask=key_mask)
                 epoch_rewards.append(total_reward)
 
                 if (episode + 1) % 10 == 0:
@@ -161,17 +174,17 @@ class Qtar:
             if (epoch + 1) % 100 == 0:
                 filepath = self.visualizer.save_epoch(self.training_history, epoch + 1)
                 print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
+                # Generate and save MIDI every 100 epochs
+                save_midi(epoch + 1, self.env)
 
         return self.training_history
 
-    def generate_solo(self, chord_progression):
-        """Generate a solo over the given chord progression"""
-        self.env = QtarEnvironment(chord_progression)
+    def generate_solo(self, key_mask=C_MAJOR_KEY_MASK):
         state = self.env.reset()
         melody = []
 
         while True:
-            note_action, rhythm_action = self.act(state)
+            note_action, rhythm_action = self.act(state, key_mask=key_mask)
             next_state, _, done = self.env.step(note_action, rhythm_action)
             melody.append((note_action, self.env.rhythm_values[rhythm_action], self.env.current_beat))
             if done:
