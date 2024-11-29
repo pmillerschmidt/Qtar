@@ -21,8 +21,7 @@ app.add_middleware(
 )
 
 # Initialize model
-chord_progression = ['C', 'Am', 'F', 'G']
-qtar = Qtar(chord_progression, use_human_feedback=True)
+qtar = Qtar(scale='C_MAJOR', progression_type='I_VI_IV_V', use_human_feedback=True)
 
 # Load model if exists
 PRETRAINED_MODEL_PATH =  "models/pretrained_qtar_model.pt"
@@ -39,7 +38,6 @@ async def get_current_solo():
     """Get the current solo that needs feedback"""
     if not hasattr(get_current_solo, 'current_solo'):
         return {"status": "waiting", "message": "No solo available for feedback yet"}
-
     try:
         solo = get_current_solo.current_solo
         notes = []
@@ -53,10 +51,9 @@ async def get_current_solo():
                 "beat": current_beat
             })
             current_beat += duration
-
         return {
             "status": "ready",
-            "chords": chord_progression,
+            "chords": qtar.chord_progression,
             "notes": notes
         }
     except Exception as e:
@@ -81,16 +78,13 @@ async def start_training():
     try:
         print("Starting training episode...")
         # Generate a solo for feedback first
-        solo = qtar.generate_solo(chord_progression)
+        solo = qtar.generate_solo()
         get_current_solo.current_solo = solo
-
         # Do a small training step
         qtar.train_extensive(total_epochs=1, episodes_per_epoch=1)
-
         # Generate new solo after training
-        new_solo = qtar.generate_solo(chord_progression)
+        new_solo = qtar.generate_solo()
         get_current_solo.current_solo = new_solo
-
         return {
             "status": "success",
             "message": "Training completed",
@@ -107,23 +101,19 @@ def train_model():
     """Main training loop"""
     total_epochs = 50  # Changed from 100
     episodes_per_epoch = 20  # Changed from 50
-
     try:
         for epoch in range(total_epochs):
             print(f"\nEpoch {epoch + 1}/{total_epochs}")
-
             for episode in range(episodes_per_epoch):
                 # Every 10 episodes, get human feedback
                 if episode % 10 == 0:
                     # Generate a solo for feedback
-                    solo = qtar.generate_solo(chord_progression)
+                    solo = qtar.generate_solo()
                     get_current_solo.current_solo = solo
-
                     print(f"\nWaiting for human feedback on episode {episode}...")
                     # Wait for feedback
                     rating = feedback_queue.get()
                     print(f"Received feedback: {rating}")
-
                     # Save model after receiving feedback
                     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
                     metadata = {
@@ -132,12 +122,9 @@ def train_model():
                         'feedback_count': len(qtar.env.human_feedback.buffer)
                     }
                     qtar.save_model(MODEL_PATH, metadata=metadata)
-
                 # Regular training step
                 qtar.train_extensive(total_epochs=1, episodes_per_epoch=1)
-
             print(f"Completed epoch {epoch + 1}")
-
     except Exception as e:
         print(f"Training error: {str(e)}")
 
@@ -152,7 +139,6 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_server)
     server_thread.daemon = True  # This ensures the thread will shut down with the main program
     server_thread.start()
-
     # Run training in main thread
     print("Starting training... Open http://localhost:3000 to provide feedback")
     try:

@@ -15,7 +15,6 @@ class QtarNetwork(nn.Module):
             nn.Dropout(0.2),
             nn.Linear(256, 128)
         )
-
         # Separate note and rhythm paths with residual connections
         self.note_head = nn.Sequential(
             nn.Linear(128, 64),
@@ -23,7 +22,6 @@ class QtarNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(64, note_size)
         )
-
         self.rhythm_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
@@ -35,7 +33,6 @@ class QtarNetwork(nn.Module):
         shared_features = self.shared_layers(x)
         note_logits = self.note_head(shared_features)
         rhythm_logits = self.rhythm_head(shared_features)
-
         # Apply key mask
         if key_mask is not None:
             # Set logits of invalid notes to a very negative value
@@ -43,5 +40,4 @@ class QtarNetwork(nn.Module):
             masked_note_logits[:, :12] = note_logits[:, :12].masked_fill((key_mask == 0), float('-inf'))
         else:
             masked_note_logits = note_logits
-
         return masked_note_logits, rhythm_logits

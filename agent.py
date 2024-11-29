@@ -7,7 +7,7 @@ import random
 from environment import QtarEnvironment
 from model import QtarNetwork
 from visualization import TrainingVisualizer
-from music_theory import PROGRESSIONS, SCALE_MASKS
+from music_theory import PROGRESSIONS
 
 class Qtar:
     def __init__(self,
@@ -15,6 +15,7 @@ class Qtar:
                  progression_type='I_VI_IV_V',
                  beats_per_chord=4,
                  use_human_feedback=False):
+        self.scale = scale
         self.chord_progression = PROGRESSIONS[progression_type]
         self.env = QtarEnvironment(
             chord_progression=self.chord_progression,
@@ -194,15 +195,15 @@ class Qtar:
             else:
                 patience_counter += 1
 
-            if patience_counter >= 20:  # Early stopping
+            if patience_counter >= 50:  # Early stopping
                 print("Early stopping triggered")
                 break
 
         return self.training_history
 
-    def generate_solo(self, chord_progression):
+    def generate_solo(self):
         """Generate a solo over the given chord progression"""
-        self.env = QtarEnvironment(chord_progression)
+        self.env = QtarEnvironment(scale=self.scale, chord_progression=self.chord_progression)
         state = self.env.reset()
         melody = []
 

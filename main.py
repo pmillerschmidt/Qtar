@@ -6,7 +6,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description='Generate music with Q-tar')
-    parser.add_argument('--model-path', type=str, default='models/qtar_model.pt',
+    parser.add_argument('--model_path', type=str, default='models/qtar_model.pt',
                         help='Path to saved model')
     parser.add_argument('--output', type=str, default='qtar_solo.mid',
                         help='Output MIDI file path')
@@ -26,7 +26,7 @@ def main():
 
     # Generate solo
     print("\nGenerating solo...")
-    solo = qtar.generate_solo(chord_progression)
+    solo = qtar.generate_solo()
 
     # Print the solo in a readable format
     print("\nGenerated Solo:")
