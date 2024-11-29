@@ -1,4 +1,6 @@
 import os
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,23 +16,34 @@ class Qtar:
                  scale='C_MAJOR',
                  progression_type='I_VI_IV_V',
                  beats_per_chord=4,
-                 use_human_feedback=False):
+                 use_human_feedback=False,
+                 training_phase=1
+                 ):
         self.scale = scale
         self.chord_progression = PROGRESSIONS[progression_type]
         self.env = QtarEnvironment(
             chord_progression=self.chord_progression,
             scale=scale,
             beats_per_chord=beats_per_chord,
+            training_phase=training_phase,
             use_human_feedback=use_human_feedback)
         self.state_size = len(self.env._get_state())
         self.note_size = 12  # 12 semitones
         self.rhythm_size = len(self.env.rhythm_values)
+
+        # Phase-specific parameters
+        self.current_phase = training_phase
+        self.phase_metrics = self._initialize_phase_metrics()
+
+        # Training parameters (now phase-dependent)
         self.memory = deque(maxlen=2000)
         self.gamma = 0.99
         self.epsilon = 1.0
         self.epsilon_min = 0.05
-        self.epsilon_decay = 0.997
         self.learning_rate = 0.0005
+        self._adjust_training_params()
+
+        # model specifics
         self.model = QtarNetwork(self.state_size, self.note_size, self.rhythm_size)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -41,6 +54,7 @@ class Qtar:
             verbose=True
         )
         self.training_history = []
+        self.phase_history = []
 
     def save_model(self, filepath, metadata=None):
         """Save model weights and training metadata"""
@@ -122,6 +136,79 @@ class Qtar:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
+    def _initialize_phase_metrics(self):
+        """Initialize phase-specific metrics and thresholds"""
+        return {
+            'phase': self.current_phase,
+            'episodes': 0,
+            'rewards': deque(maxlen=1000),
+            'thresholds': {
+                1: {'reward': 0.5, 'episodes': 5000, 'stability': 0.3},
+                2: {'reward': 1.0, 'episodes': 7000, 'stability': 0.3},
+                3: {'reward': 1.5, 'episodes': 10000, 'stability': 0.3},
+                4: {'reward': 2.0, 'episodes': 15000, 'stability': 0.3}
+            }
+        }
+
+    def _adjust_training_params(self):
+        """Adjust training parameters based on current phase"""
+        if self.current_phase == 1:
+            self.epsilon = 1.0
+            self.epsilon_decay = 0.997
+            self.learning_rate = 0.0005
+        elif self.current_phase == 2:
+            self.epsilon = 0.8
+            self.epsilon_decay = 0.998
+            self.learning_rate = 0.0004
+        elif self.current_phase == 3:
+            self.epsilon = 0.6
+            self.epsilon_decay = 0.999
+            self.learning_rate = 0.0003
+        elif self.current_phase == 4:
+            self.epsilon = 0.4
+            self.epsilon_decay = 0.9995
+            self.learning_rate = 0.0002
+        else:  # Phase 5
+            self.epsilon = 0.2
+            self.epsilon_decay = 0.9999
+            self.learning_rate = 0.0001
+
+    def _check_phase_advancement(self):
+        """Check if conditions are met to advance to next phase"""
+        if self.current_phase >= 5:
+            return False
+
+        metrics = self.phase_metrics
+        thresholds = metrics['thresholds'][self.current_phase]
+
+        if len(metrics['rewards']) < 1000:
+            return False
+
+        avg_reward = np.mean(metrics['rewards'])
+        reward_stability = np.std(metrics['rewards'])
+
+        return (metrics['episodes'] >= thresholds['episodes'] and
+                avg_reward >= thresholds['reward'] and
+                reward_stability < thresholds['stability'])
+
+    def advance_phase(self):
+        """Advance to next training phase"""
+        if self.current_phase >= 5:
+            return False
+
+        print(f"\nAdvancing from phase {self.current_phase} to {self.current_phase + 1}")
+        self.current_phase += 1
+        self.env.training_phase = self.current_phase
+        self._adjust_training_params()
+
+        # Save phase transition checkpoint
+        self.save_model(f'models/phase_{self.current_phase}_start.pt')
+
+        # Reset phase-specific metrics
+        self.phase_metrics = self._initialize_phase_metrics()
+
+        return True
+
     def train_extensive(self, total_epochs, episodes_per_epoch=100):
         best_reward = float('-inf')
         patience_counter = 0
@@ -155,6 +242,17 @@ class Qtar:
                           f"Reward: {total_reward:.2f}, Steps: {steps}, "
                           f"Epsilon: {self.epsilon:.4f}")
 
+                # Check for phase advancement
+                if self._check_phase_advancement():
+                    self.advance_phase()
+                    # Save phase transition statistics
+                    self.phase_history.append({
+                        'epoch': epoch + 1,
+                        'episode': episode + 1,
+                        'phase': self.current_phase,
+                        'avg_reward': np.mean(self.phase_metrics['rewards']),
+                        'stability': np.std(self.phase_metrics['rewards'])
+                    })
 
             # Calculate epoch statistics
             avg_reward = sum(epoch_rewards) / len(epoch_rewards)
