@@ -1,18 +1,22 @@
 import torch
 import numpy as np
 from collections import defaultdict
-from music_theory import CHORD_TONES, SCALE_DEGREES, KEY_MASKS
+from music_theory import CHORD_TONES, SCALE_DEGREES, SCALE_MASKS
 from feedback import HumanFeedbackBuffer
 
 
 class QtarEnvironment:
-    def __init__(self, chord_progression, scale='C', beats_per_chord=4, use_human_feedback=False):
+    def __init__(self,
+                 chord_progression,
+                 scale='C_MAJOR',
+                 beats_per_chord=4,
+                 use_human_feedback=False):
         self.chord_progression = chord_progression
         self.beats_per_chord = beats_per_chord
         self.use_human_feedback = use_human_feedback
         self.current_position = 0
         self.current_beat = 0
-        self.scale_mask = torch.tensor(KEY_MASKS[scale], dtype=torch.float32)
+        self.scale_mask = SCALE_MASKS[scale]
 
         self.rhythm_values = [
             0.25,  # Sixteenth note

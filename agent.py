@@ -7,11 +7,20 @@ import random
 from environment import QtarEnvironment
 from model import QtarNetwork
 from visualization import TrainingVisualizer
-
+from music_theory import PROGRESSIONS, SCALE_MASKS
 
 class Qtar:
-    def __init__(self, chord_progression, scale='C', beats_per_chord=4, use_human_feedback=False):
-        self.env = QtarEnvironment(chord_progression, scale, beats_per_chord, use_human_feedback)
+    def __init__(self,
+                 scale='C_MAJOR',
+                 progression_type='I_VI_IV_V',
+                 beats_per_chord=4,
+                 use_human_feedback=False):
+        self.chord_progression = PROGRESSIONS[progression_type]
+        self.env = QtarEnvironment(
+            chord_progression=self.chord_progression,
+            scale=scale,
+            beats_per_chord=beats_per_chord,
+            use_human_feedback=use_human_feedback)
         self.state_size = len(self.env._get_state())
         self.note_size = 12  # 12 semitones
         self.rhythm_size = len(self.env.rhythm_values)
@@ -180,7 +189,7 @@ class Qtar:
             # Save best model and check early stopping
             if avg_reward > best_reward:
                 best_reward = avg_reward
-                self.save_model('best_model.pt')
+                self.save_model('models/best_model.pt')
                 patience_counter = 0
             else:
                 patience_counter += 1

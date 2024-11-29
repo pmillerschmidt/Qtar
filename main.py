@@ -16,11 +16,9 @@ def main():
         print(f"Error: Model file not found at {args.model_path}")
         return
 
-    # Define a chord progression
-    chord_progression = ['C', 'Am', 'F', 'G']
-
     # Create Q-tar instance and load model
-    qtar = Qtar(chord_progression)
+    qtar = Qtar(scale='C_MAJOR', progression_type='I_VI_IV_V')
+    chord_progression = qtar.chord_progression
     print(f"Loading model from {args.model_path}")
     metadata = qtar.load_model(args.model_path)
     if metadata:
