@@ -23,6 +23,13 @@ class Qtar:
         self.learning_rate = 0.0005
         self.model = QtarNetwork(self.state_size, self.note_size, self.rhythm_size)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='max',
+            factor=0.5,
+            patience=5,
+            verbose=True
+        )
         self.training_history = []
         self.visualizer = TrainingVisualizer()
 
@@ -107,6 +114,9 @@ class Qtar:
             self.epsilon *= self.epsilon_decay
 
     def train_extensive(self, total_epochs, episodes_per_epoch=100):
+        best_reward = float('-inf')
+        patience_counter = 0
+
         """Train the model over multiple epochs"""
         for epoch in range(total_epochs):
             epoch_rewards = []
@@ -163,6 +173,21 @@ class Qtar:
             if (epoch + 1) % 100 == 0:
                 filepath = self.visualizer.save_epoch(self.training_history, epoch + 1)
                 print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
+
+            # Learning rate scheduling
+            self.scheduler.step(avg_reward)
+
+            # Save best model and check early stopping
+            if avg_reward > best_reward:
+                best_reward = avg_reward
+                self.save_model('best_model.pt')
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= 20:  # Early stopping
+                print("Early stopping triggered")
+                break
 
         return self.training_history
 

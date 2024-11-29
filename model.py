@@ -3,25 +3,32 @@ import torch.nn as nn
 class QtarNetwork(nn.Module):
     def __init__(self, state_size, note_size, rhythm_size):
         super(QtarNetwork, self).__init__()
+        # Increase network capacity
         self.shared_layers = nn.Sequential(
-            nn.Linear(state_size, 256),
+            nn.Linear(state_size, 512),  # Wider
+            nn.LayerNorm(512),           # Add normalization
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(256, 128),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU()
+            nn.Dropout(0.2),
+            nn.Linear(256, 128)
         )
 
+        # Separate note and rhythm paths with residual connections
         self.note_head = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Linear(128, 64),
+            nn.LayerNorm(64),
             nn.ReLU(),
-            nn.Linear(32, note_size)
+            nn.Linear(64, note_size)
         )
+
         self.rhythm_head = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Linear(128, 64),
+            nn.LayerNorm(64),
             nn.ReLU(),
-            nn.Linear(32, rhythm_size)
+            nn.Linear(64, rhythm_size)
         )
 
     def forward(self, x, key_mask=None):
