@@ -71,3 +71,6 @@ visualizations/
 *.csv
 *.mid
 *.png
+
+# frontend
+frontend/.next/
