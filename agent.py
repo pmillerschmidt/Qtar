@@ -6,7 +6,7 @@ from collections import deque
 import random
 from environment import QtarEnvironment
 from model import QtarNetwork
-from visualization import TrainingVisualizer
+from visualization import save_epoch
 from music_theory import PROGRESSIONS
 
 class Qtar:
@@ -41,7 +41,6 @@ class Qtar:
             verbose=True
         )
         self.training_history = []
-        self.visualizer = TrainingVisualizer()
 
     def save_model(self, filepath, metadata=None):
         """Save model weights and training metadata"""
@@ -181,7 +180,7 @@ class Qtar:
 
             # Save visualization every 100 epochs
             if (epoch + 1) % 100 == 0:
-                filepath = self.visualizer.save_epoch(self.training_history, epoch + 1)
+                filepath = save_epoch(self.training_history, epoch + 1)
                 print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
 
             # Learning rate scheduling

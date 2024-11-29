@@ -2,7 +2,7 @@ from agent import Qtar
 import os
 import matplotlib.pyplot as plt
 
-from visualization import TrainingVisualizer
+from visualization import smooth_curve
 
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 
@@ -33,8 +33,7 @@ def pretrain():
         # Plot raw data with low alpha
         plt.plot(epochs, avg_rewards, 'b-', alpha=0.2, label='Raw')
         # Plot smoothed data
-        visualizer = TrainingVisualizer()
-        smoothed_rewards = visualizer.smooth_curve(points=avg_rewards)
+        smoothed_rewards = smooth_curve(points=avg_rewards)
         plt.plot(epochs, smoothed_rewards, 'b-', label='Smoothed')
         # Fill the area under the smoothed rewards plot
         plt.fill_between(epochs, smoothed_rewards, color='b', alpha=0.2)
