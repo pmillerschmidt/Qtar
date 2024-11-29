@@ -20,18 +20,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize model
-qtar = Qtar(scale='C_MAJOR', progression_type='I_VI_IV_V', use_human_feedback=True)
+qtar = Qtar(
+    scale='C_MAJOR',
+    progression_type='I_VI_IV_V',
+    use_human_feedback=True,
+    training_phase=5  # Start directly in phase 5
+)
 
-# Load model if exists
-PRETRAINED_MODEL_PATH =  "models/pretrained_qtar_model.pt"
+# Load pretrained model and ensure it's in phase 5
+PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 MODEL_PATH = "models/trained_qtar_model.pt"
-if os.path.exists(PRETRAINED_MODEL_PATH):
-    print(f"Loading existing model from {PRETRAINED_MODEL_PATH}")
-    qtar.load_model(PRETRAINED_MODEL_PATH)
-else:
-    print("No existing model found, starting fresh")
 
+if os.path.exists(PRETRAINED_MODEL_PATH):
+    print(f"Loading pretrained model from {PRETRAINED_MODEL_PATH}")
+    metadata = qtar.load_model(PRETRAINED_MODEL_PATH)
+    if metadata and 'completed_phases' in metadata:
+        if len(metadata['completed_phases']) < 4:
+            raise ValueError("Pretrained model hasn't completed all preliminary phases")
+    qtar.current_phase = 5  # Ensure we're in phase 5
+else:
+    raise ValueError("No pretrained model found. Please run pretraining first.")
+
+@app.get("/get-phase-info")
+async def get_phase_info():
+    """Get current training phase information"""
+    return {
+        "current_phase": 5,
+        "phase_description": "Final phase: Refining with human feedback"
+    }
 
 @app.get("/get-current-solo")
 async def get_current_solo():
@@ -103,7 +119,7 @@ def train_model():
     episodes_per_epoch = 20  # Changed from 50
     try:
         for epoch in range(total_epochs):
-            print(f"\nEpoch {epoch + 1}/{total_epochs}")
+            print(f"\nEpoch {epoch + 1}/{total_epochs} (Phase 5 - Human Feedback)")
             for episode in range(episodes_per_epoch):
                 # Every 10 episodes, get human feedback
                 if episode % 10 == 0:
