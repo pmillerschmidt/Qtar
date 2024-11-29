@@ -15,5 +15,5 @@ SCALE_DEGREES = {
     'G': [7, 9, 11, 0, 2, 4, 6]   # G major scale
 }
 
-C_MAJOR_KEY_MASK = key_mask = torch.tensor([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1], dtype=torch.float32)
+C_MAJOR_KEY_MASK = torch.tensor([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1], dtype=torch.float32)
 
