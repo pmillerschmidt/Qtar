@@ -211,7 +211,6 @@ class QtarEnvironment:
         """Phase 1: Simple chord tone rewards"""
         note_in_octave = note % 12
         chord_tones = CHORD_TONES[chord]
-
         if note_in_octave == chord_tones[0]:  # root
             return 2.0
         elif note_in_octave in chord_tones:  # other chord tones

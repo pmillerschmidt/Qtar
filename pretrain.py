@@ -8,6 +8,12 @@ from visualization import smooth_curve, create_phase_training_visualization
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 PHASE_CHECKPOINTS_DIR = "models/phase_checkpoints"
 
+MIN_EPOCHS = {
+    1: 400,  # Much longer for fundamental skills
+    2: 200,  # Voice leading needs significant practice
+    3: 200,  # Rhythm patterns need time to develop
+    4: 200   # Motifs and structure are complex
+}
 
 def train_single_phase(qtar, phase_number, epochs=200, episodes_per_epoch=100):
     """Train a single phase until performance criteria are met"""
@@ -15,18 +21,16 @@ def train_single_phase(qtar, phase_number, epochs=200, episodes_per_epoch=100):
 
     best_avg_reward = float('-inf')
     patience = 0
-    max_patience = 10  # Number of epochs without improvement before stopping
-
+    max_patience = 50  # Much longer patience
     phase_history = []
+
+    # Must complete minimum epochs regardless of performance
+    min_epochs_completed = False
 
     for epoch in range(epochs):
         print(f"\nEpoch {epoch + 1}/{epochs} (Phase {phase_number})")
 
-        # Train for one epoch
-        training_history, _ = qtar.train_extensive(
-            total_epochs=1,
-            episodes_per_epoch=episodes_per_epoch
-        )
+        training_history, _ = qtar.train_extensive(total_epochs=1, episodes_per_epoch=episodes_per_epoch)
 
         # Calculate metrics
         avg_reward = np.mean([entry['avg_reward'] for entry in training_history])
@@ -38,56 +42,96 @@ def train_single_phase(qtar, phase_number, epochs=200, episodes_per_epoch=100):
 
         print(f"Average Reward: {avg_reward:.2f}")
 
-        # Check if performance improved
-        if avg_reward > best_avg_reward:
-            best_avg_reward = avg_reward
-            patience = 0
-            # Save best model for this phase
-            os.makedirs(PHASE_CHECKPOINTS_DIR, exist_ok=True)
-            qtar.save_model(
-                f"{PHASE_CHECKPOINTS_DIR}/phase_{phase_number}_best.pt",
-                metadata={'phase': phase_number, 'avg_reward': avg_reward}
-            )
-        else:
-            patience += 1
+        # Only consider advancement after minimum epochs
+        if len(phase_history) >= MIN_EPOCHS[phase_number]:
+            min_epochs_completed = True
+            if phase_meets_criteria(phase_number, avg_reward, phase_history):
+                print(f"\nPhase {phase_number} criteria met after thorough training!")
+                break
 
-        # Check phase completion criteria
-        if phase_meets_criteria(phase_number, avg_reward, training_history):
-            print(f"\nPhase {phase_number} criteria met! Moving to next phase.")
-            break
+        # Early stopping only after minimum epochs and with long patience
+        if min_epochs_completed:
+            if avg_reward > best_avg_reward:
+                best_avg_reward = avg_reward
+                patience = 0
+            else:
+                patience += 1
 
-        # Early stopping check
-        if patience >= max_patience:
-            print(f"\nEarly stopping triggered for Phase {phase_number}")
-            break
+            if patience >= max_patience:
+                print(f"\nNo improvement for {max_patience} epochs after minimum training")
+                break
 
     return phase_history
 
 
 def phase_meets_criteria(phase_number, avg_reward, training_history):
     """Define completion criteria for each phase"""
-    min_epochs = {
-        1: 50,  # Minimum 100 epochs for phase 1
-        2: 50,
-        3: 50,
-        4: 50
-    }
-    # Check if we've done minimum epochs
-    if len(training_history) < min_epochs[phase_number]:
+    if len(training_history) < MIN_EPOCHS[phase_number]:
         return False
-    # Get reward stats from recent history
-    recent_rewards = [entry['avg_reward'] for entry in training_history[-50:]]
-    stability = np.std(recent_rewards) if recent_rewards else float('inf')
-    recent_avg = np.mean(recent_rewards) if recent_rewards else float('-inf')
+
+    # Must show sustained performance
+    if not check_sustained_performance(training_history):
+        return False
+
+    # Phase-specific criteria
     if phase_number == 1:
-        return avg_reward > 1.0 and stability < 0.2 and recent_avg > 0.8
+        # Basic harmony must be very solid
+        return (avg_reward > 50.0 and  # Was 1.2
+                check_consecutive_windows(training_history, 3) and
+                min_last_n_rewards(training_history, 100) > 30.0)  # Was 0.8
+
     elif phase_number == 2:
-        return avg_reward > 1.0 and stability < 0.3
+        return (avg_reward > 75.0 and  # Was 1.5
+                check_consecutive_windows(training_history, 3) and
+                min_last_n_rewards(training_history, 100) > 50.0)  # Was 1.0
+
     elif phase_number == 3:
-        return avg_reward > 1.5 and stability < 0.3
+        return (avg_reward > 100.0 and  # Was 1.8
+                check_consecutive_windows(training_history, 3) and
+                min_last_n_rewards(training_history, 100) > 75.0)  # Was 1.2
+
     elif phase_number == 4:
-        return avg_reward > 2.0 and stability < 0.3
+        return (avg_reward > 150.0 and  # Was 2.0
+                check_consecutive_windows(training_history, 3) and
+                min_last_n_rewards(training_history, 100) > 100.0)  # Was 1.5
+
     return False
+
+
+def check_sustained_performance(training_history, window_size=100):
+    """Check if performance has been consistently good over a long window"""
+    if len(training_history) < window_size:
+        return False
+
+    recent_rewards = [entry['avg_reward'] for entry in training_history[-window_size:]]
+    avg_reward = np.mean(recent_rewards)
+    stability = np.std(recent_rewards)
+    min_reward = min(recent_rewards)
+
+    # Adjusted thresholds for higher reward scale
+    return (avg_reward > 50.0 and  # Was 1.0
+            stability < (avg_reward * 0.3) and  # Relative stability instead of absolute
+            min_reward > 25.0)  # Was 0.5
+
+
+def check_consecutive_windows(training_history, num_windows, window_size=100):
+    """Check if performance criteria are met for multiple consecutive windows"""
+    if len(training_history) < window_size * num_windows:
+        return False
+
+    for i in range(num_windows):
+        start_idx = -(window_size * (i + 1))
+        end_idx = -(window_size * i) if i > 0 else None
+        window = training_history[start_idx:end_idx]
+        if not check_sustained_performance(window):
+            return False
+    return True
+
+
+def min_last_n_rewards(training_history, n):
+    """Get minimum reward over last n episodes"""
+    rewards = [entry['avg_reward'] for entry in training_history[-n:]]
+    return min(rewards) if rewards else float('-inf')
 
 def reward_stability(training_history):
     """Calculate the stability of recent rewards"""
