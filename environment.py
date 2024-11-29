@@ -166,9 +166,9 @@ class QtarEnvironment:
         chord_tones = CHORD_TONES[chord]
         if note_in_octave in chord_tones:
             if note_in_octave == chord_tones[0]:  # root
-                reward += 6.0 if self._is_strong_beat() else 3.0  # Doubled from previous
-            else:  # third and fifth
                 reward += 4.0 if self._is_strong_beat() else 2.0  # Doubled from previous
+            else:  # third and fifth
+                reward += 3.0 if self._is_strong_beat() else 1.0  # Doubled from previous
 
         # 2. Scale Context (Increased punishment)
         scale = SCALE_DEGREES[chord]
