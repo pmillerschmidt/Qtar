@@ -6,12 +6,22 @@ from collections import deque
 import random
 from environment import QtarEnvironment
 from model import QtarNetwork
-from visualization import TrainingVisualizer
-
+from visualization import save_epoch
+from music_theory import PROGRESSIONS
 
 class Qtar:
-    def __init__(self, chord_progression, beats_per_chord=4, use_human_feedback=False):
-        self.env = QtarEnvironment(chord_progression, beats_per_chord, use_human_feedback)
+    def __init__(self,
+                 scale='C_MAJOR',
+                 progression_type='I_VI_IV_V',
+                 beats_per_chord=4,
+                 use_human_feedback=False):
+        self.scale = scale
+        self.chord_progression = PROGRESSIONS[progression_type]
+        self.env = QtarEnvironment(
+            chord_progression=self.chord_progression,
+            scale=scale,
+            beats_per_chord=beats_per_chord,
+            use_human_feedback=use_human_feedback)
         self.state_size = len(self.env._get_state())
         self.note_size = 12  # 12 semitones
         self.rhythm_size = len(self.env.rhythm_values)
@@ -23,8 +33,14 @@ class Qtar:
         self.learning_rate = 0.0005
         self.model = QtarNetwork(self.state_size, self.note_size, self.rhythm_size)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='max',
+            factor=0.5,
+            patience=5,
+            verbose=True
+        )
         self.training_history = []
-        self.visualizer = TrainingVisualizer()
 
     def save_model(self, filepath, metadata=None):
         """Save model weights and training metadata"""
@@ -63,7 +79,9 @@ class Qtar:
 
     def act(self, state):
         if random.random() <= self.epsilon:
-            note_action = random.randrange(self.note_size)
+            # For random actions, only choose from scale tones
+            valid_notes = [i for i in range(12) if self.env.scale_mask[i] == 1]
+            note_action = random.choice(valid_notes)
             rhythm_action = random.randrange(self.rhythm_size)
             return note_action, rhythm_action
 
@@ -105,6 +123,9 @@ class Qtar:
             self.epsilon *= self.epsilon_decay
 
     def train_extensive(self, total_epochs, episodes_per_epoch=100):
+        best_reward = float('-inf')
+        patience_counter = 0
+
         """Train the model over multiple epochs"""
         for epoch in range(total_epochs):
             epoch_rewards = []
@@ -159,14 +180,29 @@ class Qtar:
 
             # Save visualization every 100 epochs
             if (epoch + 1) % 100 == 0:
-                filepath = self.visualizer.save_epoch(self.training_history, epoch + 1)
+                filepath = save_epoch(self.training_history, epoch + 1)
                 print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
+
+            # Learning rate scheduling
+            self.scheduler.step(avg_reward)
+
+            # Save best model and check early stopping
+            if avg_reward > best_reward:
+                best_reward = avg_reward
+                self.save_model('models/best_model.pt')
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= 100:  # Early stopping
+                print("Early stopping triggered")
+                break
 
         return self.training_history
 
-    def generate_solo(self, chord_progression):
+    def generate_solo(self):
         """Generate a solo over the given chord progression"""
-        self.env = QtarEnvironment(chord_progression)
+        self.env = QtarEnvironment(scale=self.scale, chord_progression=self.chord_progression)
         state = self.env.reset()
         melody = []
 
