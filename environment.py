@@ -177,43 +177,57 @@ class QtarEnvironment:
 
         # penalize repetition
         reward += self._repetition_penalty(note)
-        # Motif-specific rewards
-        if len(current_motif) >= 2:  # Only evaluate once we have enough notes
-            reward += self._motif_structure_reward(current_motif) * 3.0
-            reward += self._motif_uniqueness_reward(current_motif) * 2.0
 
-            # If motif is complete and good, store it
-            if self._is_motif_complete(current_motif):
-                if self._is_good_motif(current_motif):
-                    self.motif_memory.append(current_motif)
-                    reward += 20.0  # Big reward for good motif
+        # # Motif-specific rewards
+        # if len(current_motif) >= 2:  # Only evaluate once we have enough notes
+        #     reward += self._motif_structure_reward(current_motif) * 3.0
+        #     reward += self._motif_uniqueness_reward(current_motif) * 2.0
+        #
+        #     # If motif is complete and good, store it
+        #     if self._is_motif_complete(current_motif):
+        #         if self._is_good_motif(current_motif):
+        #             self.motif_memory.append(current_motif)
+        #             reward += 20.0  # Big reward for good motif
 
         return reward
 
     def _repetition_penalty(self, note):
-        """Penalize note repetition"""
+        """Penalize note repetition and alternating patterns"""
         if len(self.current_melody) == 0:
             return 0
+
         penalty = 0
         note_in_octave = note % 12
+
         # Immediate repetition penalty
         if note == self.current_melody[-1][0]:
-            penalty -= 5.0
+            penalty -= 15.0
+
             # Extra penalty for three repeated notes
             if len(self.current_melody) >= 2:
                 if note == self.current_melody[-2][0]:
-                    penalty -= 10.0
-        # Check recent context (last 8 notes)
+                    penalty -= 25.0
+
+        # Check for alternating patterns (like C-E-C-E)
+        if len(self.current_melody) >= 3:
+            recent_notes = [n[0] % 12 for n in self.current_melody[-3:]] + [note_in_octave]
+            if len(recent_notes) >= 4:
+                if (recent_notes[-1] == recent_notes[-3] and
+                        recent_notes[-2] == recent_notes[-4]):
+                    penalty -= 20.0  # Penalty for alternating pattern
+
+        # Penalize overuse in recent context (last 8 notes)
         if len(self.current_melody) >= 7:
             recent_notes = [n[0] % 12 for n in self.current_melody[-7:]] + [note_in_octave]
             note_counts = {}
-            # Count occurrences of each note
+
             for n in recent_notes:
                 note_counts[n] = note_counts.get(n, 0) + 1
-            # Penalize if any note appears too frequently
+
             max_occurrences = max(note_counts.values())
-            if max_occurrences > 3:  # More than 3 times in last 8 notes
-                penalty -= (max_occurrences - 3) * 5.0
+            if max_occurrences > 3:
+                penalty -= (max_occurrences - 3) * 10.0
+
         return penalty
 
 
@@ -462,16 +476,6 @@ class QtarEnvironment:
         else:  # weak beat
             if note_in_octave in chord_tones:
                 reward += 3.0
-            # No penalty for non-chord tones on weak beats
-        # Bonus for good voice leading to chord tones
-        if len(self.current_melody) > 0:
-            prev_note = self.current_melody[-1][0] % 12
-            if note_in_octave in chord_tones:
-                interval = abs(note_in_octave - prev_note)
-                if interval <= 2:  # Stepwise motion to chord tone
-                    reward += 4.0
-                elif interval <= 4:  # Small leap to chord tone
-                    reward += 2.0
         return reward
 
     def _voice_leading_reward(self, note):
@@ -483,6 +487,8 @@ class QtarEnvironment:
         interval = abs(note - prev_note)
 
         # Basic voice leading rewards
+        if interval == 0:
+            return 0.0  # no reward for repetition
         if interval <= 2:
             return 5.0  # Stepwise motion
         elif interval <= 4:
@@ -497,7 +503,6 @@ class QtarEnvironment:
                     return 2.0
         elif interval > 12:
             return -5.0  # Penalize leaps larger than an octave
-
         return 0.0
 
     def _is_rhythmic_variation(self, motif1, motif2):
@@ -641,28 +646,20 @@ class QtarEnvironment:
         """Evaluate coherence of rhythm in current context"""
         if len(self.current_melody) == 0:
             return 0
-
         reward = 0
-
-        # Get current beat position
-        current_pos = self.current_beat
-
         # Reward longer notes on strong beats
         if self._is_strong_beat() and rhythm >= 1.0:
             reward += 5.0
-
         # Penalize very short notes in succession
         if len(self.current_melody) >= 2:
             recent_rhythms = [n[1] for n in self.current_melody[-2:]] + [rhythm]
             if all(r <= 0.25 for r in recent_rhythms):
                 reward -= 10.0
-
         # Reward rhythmic patterns
         if len(self.current_melody) >= 3:
             recent_rhythms = [n[1] for n in self.current_melody[-3:]]
             if self._has_consistent_rhythm(recent_rhythms):
                 reward += 5.0
-
         return reward
 
     def _get_current_motif(self):
