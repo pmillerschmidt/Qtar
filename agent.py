@@ -8,7 +8,6 @@ from collections import deque
 import random
 from environment import QtarEnvironment
 from model import QtarNetwork
-from visualization import save_epoch
 from music_theory import PROGRESSIONS
 
 class Qtar:
@@ -195,21 +194,15 @@ class Qtar:
             self.epsilon = 0.5  # Start with lower epsilon in phase 2
             self.epsilon_decay = 0.9998
             self.learning_rate = 0.0002
-
-
         metrics = self.phase_metrics
         thresholds = metrics['thresholds'][self.current_phase]
-
         if len(metrics['rewards']) < 1000:
             return False
-
         avg_reward = np.mean(metrics['rewards'])
         reward_stability = np.std(metrics['rewards'])
-
         return (metrics['episodes'] >= thresholds['episodes'] and
                 avg_reward >= thresholds['reward'] and
                 reward_stability < thresholds['stability'])
-
 
     def advance_phase(self):
         """Advance to next training phase"""

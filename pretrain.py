@@ -5,13 +5,13 @@ import numpy as np
 from agent import Qtar
 import os
 
-from visualization import create_phase_training_visualization, save_epoch
+from visualization import save_epoch
 
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 PHASE_CHECKPOINTS_DIR = "models/phase_checkpoints"
 
 EPOCHS = {1: 100,
-          2: 100}
+          2: 50}
 
 
 def train_single_phase(qtar, phase_number, episodes_per_epoch=100):
@@ -34,7 +34,6 @@ def train_single_phase(qtar, phase_number, episodes_per_epoch=100):
         if (epoch + 1) % 25 == 0:
             filepath = save_epoch(phase_history, epoch + 1)
             print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
-        # Early stopping only after minimum epochs
     return phase_history
 
 
@@ -82,7 +81,6 @@ def pretrain(
                 'ready_for_human_feedback': True
             }
         )
-        create_phase_training_visualization(all_phase_history)
     except KeyboardInterrupt:
         print("\nPretraining interrupted by user")
         qtar.save_model(PRETRAINED_MODEL_PATH)
