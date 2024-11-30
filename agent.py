@@ -210,7 +210,6 @@ class Qtar:
         """Train the model over multiple epochs"""
         for epoch in range(total_epochs):
             epoch_rewards = []
-            print(f"\nEpoch {epoch + 1}/{total_epochs}")
 
             for episode in range(episodes_per_epoch):
                 state = self.env.reset()

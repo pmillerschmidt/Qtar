@@ -109,14 +109,9 @@ class QtarEnvironment:
         if duration > beats_remaining:
             duration = beats_remaining
 
-        # Calculate reward based on phase
-        if self.training_phase == 1:
-            base_reward = self._calculate_motif_reward(note_action, rhythm_action, current_chord)
-        else:
-            base_reward = self._calculate_pattern_reward(note_action, rhythm_action, current_chord)
-
+        reward = self._calculate_base_reward(note_action, duration, current_chord)
         # Add human feedback if enabled
-        final_reward = self._incorporate_human_feedback(base_reward)
+        final_reward = self._incorporate_human_feedback(reward)
         # Update melody and position
         self.current_melody.append((note_action, duration, self.current_beat))
         self.used_notes.add(note_action)
@@ -161,33 +156,106 @@ class QtarEnvironment:
 
         return base_reward
 
+    def _calculate_base_reward(self, note, rhythm, chord):
+        if self.training_phase == 1:
+            reward = 0
+            # Basic musical rewards (lower weights)
+            reward += self._chord_tone_reward(note, chord) * 1.0
+            reward += self._voice_leading_reward(note) * 1.0
+            reward += self._rhythm_coherence_reward(rhythm) * 1.0
+            reward += self._repetition_penalty(note) * 1.0
+            # Only evaluate when a motif is complete (4 beats)
+            if self._is_chord_complete():
+                current_motif = self._get_current_chord_notes()
+                motif_reward = self._evaluate_motif(current_motif)
+                reward += motif_reward * 5.0  # Heavy weight on good motifs
+                # Store successful motifs for phase 2
+                if motif_reward > 50:  # Only store good motifs
+                    self.motif_memory.append(current_motif)
+                    reward += 20.0  # Bonus for creating storable motif
+            return reward
+        else:  # Phase 2
+            reward = 0
+            # Reduced basic rewards
+            reward += self._chord_tone_reward(note, chord) * 0.3
+            reward += self._voice_leading_reward(note) * 0.3
+            # When a chord is complete, check if it matches/varies a stored motif
+            if self._is_chord_complete():
+                current_motif = self._get_current_chord_notes()
+                previous_motifs = self._get_previous_chord_motifs()
+                # Check for ABAB pattern formation
+                if len(previous_motifs) >= 3:  # Have enough motifs to check pattern
+                    pattern_reward = self._evaluate_abab_pattern(current_motif, previous_motifs)
+                    reward += pattern_reward * 10.0  # Very heavy weight on pattern formation
+            return reward
+
+    def _evaluate_motif(self, motif):
+        """Evaluate a single motif on one chord"""
+        reward = 0
+
+        if not self._has_valid_motif_structure(motif):
+            return -10.0
+
+        # Melodic shape
+        reward += self._evaluate_melodic_shape(motif) * 3.0
+
+        # Rhythmic interest
+        reward += self._evaluate_rhythmic_structure(motif) * 2.0
+
+        # Coherence
+        reward += self._evaluate_motif_coherence(motif) * 2.0
+
+        return reward
+
+    def _evaluate_abab_pattern(self, current_motif, previous_motifs):
+        """Evaluate formation of ABAB patterns"""
+        reward = 0
+
+        # Check if we're completing an ABAB pattern
+        if len(previous_motifs) >= 3:
+            # Check for A-B-A-B
+            if (self._is_similar_motif(current_motif, previous_motifs[1]) and  # B
+                    self._is_similar_motif(previous_motifs[0], previous_motifs[2])):  # A
+                reward += 100.0  # Big reward for completing ABAB
+
+            # Check for good transformation of motifs
+            if self._is_good_transformation(current_motif, previous_motifs[1]):
+                reward += 50.0
+
+        return reward
+
+    def _is_similar_motif(self, motif1, motif2):
+        """Check if motifs are similar (allowing for transposition)"""
+        if len(motif1) != len(motif2):
+            return False
+
+        # Compare intervals (allows for transposition)
+        intervals1 = [b[0] - a[0] for a, b in zip(motif1[:-1], motif1[1:])]
+        intervals2 = [b[0] - a[0] for a, b in zip(motif2[:-1], motif2[1:])]
+
+        # Compare rhythms
+        rhythms1 = [note[1] for note in motif1]
+        rhythms2 = [note[1] for note in motif2]
+
+        return (intervals1 == intervals2 and
+                all(abs(r1 - r2) < 0.25 for r1, r2 in zip(rhythms1, rhythms2)))
+
     def _calculate_motif_reward(self, note, rhythm, chord):
         """Phase 1: Reward for creating good motifs"""
         reward = 0
-        note_in_octave = note % 12
-
         # Get current motif (last 2-4 beats of notes)
         current_motif = self._get_current_motif()
 
-        reward += self._chord_tone_reward(note, chord) * 2.0  # Weight of 2.0
+        # Motif-specific rewards
+        if len(current_motif) >= 2:  # Only evaluate once we have enough notes
+            reward += self._motif_structure_reward(current_motif) * 3.0
+            reward += self._motif_uniqueness_reward(current_motif) * 2.0
 
-        # Basic musical rewards
-        reward += self._voice_leading_reward(note) * 2.0
-        reward += self._rhythm_coherence_reward(rhythm) * 2.0
-
-        # penalize repetition
-        reward += self._repetition_penalty(note)
-
-        # # Motif-specific rewards
-        # if len(current_motif) >= 2:  # Only evaluate once we have enough notes
-        #     reward += self._motif_structure_reward(current_motif) * 3.0
-        #     reward += self._motif_uniqueness_reward(current_motif) * 2.0
-        #
-        #     # If motif is complete and good, store it
-        #     if self._is_motif_complete(current_motif):
-        #         if self._is_good_motif(current_motif):
-        #             self.motif_memory.append(current_motif)
-        #             reward += 20.0  # Big reward for good motif
+            # If motif is complete and good, store it
+            if self._is_motif_complete(current_motif):
+                if self._is_good_motif(current_motif):
+                    self.motif_memory.append(current_motif)
+                    reward += 20.0  # Big reward for good motif
 
         return reward
 
@@ -230,8 +298,27 @@ class QtarEnvironment:
 
         return penalty
 
+    def _novelty_reward(self, note):
+        """Reward for using new notes"""
+        note_in_octave = note % 12
+        reward = 0
+        # High reward for first use of a note
+        if note_in_octave not in self.used_notes:
+            reward += 10.0
+            self.used_notes.add(note_in_octave)
+        # Additional reward for using less-used notes
+        if len(self.current_melody) > 0:
+            note_frequencies = {}
+            for n, _, _ in self.current_melody:
+                n_class = n % 12
+                note_frequencies[n_class] = note_frequencies.get(n_class, 0) + 1
+            # If this note is among the least used
+            current_freq = note_frequencies.get(note_in_octave, 0)
+            if current_freq <= min(note_frequencies.values()):
+                reward += 5.0
+        return reward
 
-    def _calculate_pattern_reward(self, note, rhythm, chord):
+    def _calculate_pattern_reward(self):
         """Phase 2: Reward for patterns across multiple chords"""
         reward = 0
 
@@ -266,7 +353,7 @@ class QtarEnvironment:
 
         # Check note variety
         notes = [note[0] % 12 for note in motif]
-        if len(set(notes)) < 2:  # Need at least 2 different notes
+        if len(set(notes)) < 4:  # Need at least 3
             return False
 
         return True
@@ -675,3 +762,64 @@ class QtarEnvironment:
                 break
 
         return current_motif
+
+    def _evaluate_motif_coherence(self, motif):
+        """Evaluate how well the motif works as a unified musical idea"""
+        if len(motif) < 2:
+            return 0.0
+
+        reward = 0
+        notes = [note[0] for note in motif]
+        durations = [note[1] for note in motif]
+
+        # 1. Check for clear beginning and ending
+        if durations[0] >= 1.0:  # Starts with longer note
+            reward += 5.0
+        if durations[-1] >= 1.0:  # Ends with longer note
+            reward += 5.0
+
+        # 2. Check for balanced structure
+        total_duration = sum(durations)
+        midpoint = total_duration / 2
+        current_time = 0
+        for dur in durations:
+            current_time += dur
+            if abs(current_time - midpoint) < 0.25:  # Natural division near middle
+                reward += 10.0
+                break
+
+        # 3. Check for melodic arc/shape
+        intervals = [b - a for a, b in zip(notes[:-1], notes[1:])]
+        if len(intervals) >= 2:
+            # Reward clear directional movement
+            if all(i >= 0 for i in intervals):  # Ascending
+                reward += 5.0
+            elif all(i <= 0 for i in intervals):  # Descending
+                reward += 5.0
+            # Reward arch shape
+            elif (all(i >= 0 for i in intervals[:len(intervals) // 2]) and
+                  all(i <= 0 for i in intervals[len(intervals) // 2:])):
+                reward += 10.0
+
+        # 4. Check for rhythmic coherence
+        if len(durations) >= 2:
+            # Look for patterns in rhythm
+            rhythm_patterns = {}
+            for i in range(len(durations) - 1):
+                pattern = (durations[i], durations[i + 1])
+                rhythm_patterns[pattern] = rhythm_patterns.get(pattern, 0) + 1
+            if max(rhythm_patterns.values()) >= 2:  # Repeated rhythm pattern
+                reward += 10.0
+
+        # 5. Check for good use of range
+        note_range = max(notes) - min(notes)
+        if 4 <= note_range <= 12:  # Good melodic range, not too wide or narrow
+            reward += 10.0
+
+        # 6. Penalize excessive complexity
+        if len(notes) > 8:  # Too many notes
+            reward -= 10.0
+        if len(set(durations)) > 4:  # Too many different rhythmic values
+            reward -= 5.0
+
+        return reward
