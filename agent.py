@@ -28,8 +28,9 @@ class Qtar:
             beats_per_chord=beats_per_chord,
             training_phase=training_phase,
             use_human_feedback=use_human_feedback)
+
         self.state_size = len(self.env._get_state())
-        self.note_size = 12  # 12 semitones
+        self.note_size = 24  # Changed to 24 for two octaves
         self.rhythm_size = len(self.env.rhythm_values)
 
         # Phase-specific parameters
@@ -95,8 +96,12 @@ class Qtar:
 
     def act(self, state):
         if random.random() <= self.epsilon:
-            # For random actions, only choose from scale tones
-            valid_notes = [i for i in range(12) if self.env.scale_mask[i] == 1]
+            # For random actions, choose from scale tones in both octaves
+            valid_notes = []
+            for octave in range(2):  # Two octaves
+                for note in range(12):
+                    if self.env.scale_mask[note] == 1:
+                        valid_notes.append(note + (octave * 12))
             note_action = random.choice(valid_notes)
             rhythm_action = random.randrange(self.rhythm_size)
             return note_action, rhythm_action
@@ -145,10 +150,9 @@ class Qtar:
             'episodes': 0,
             'rewards': deque(maxlen=1000),
             'thresholds': {
-                1: {'reward': 0.5, 'episodes': 5000, 'stability': 0.3},
-                2: {'reward': 1.0, 'episodes': 7000, 'stability': 0.3},
-                3: {'reward': 1.5, 'episodes': 10000, 'stability': 0.3},
-                4: {'reward': 2.0, 'episodes': 15000, 'stability': 0.3}
+                # Only two phases now
+                1: {'reward': 50.0, 'episodes': 10000, 'stability': 15.0},  # Single chord motifs
+                2: {'reward': 100.0, 'episodes': 15000, 'stability': 20.0}  # Pattern development
             }
         }
 
@@ -156,24 +160,12 @@ class Qtar:
         """Adjust training parameters based on current phase"""
         if self.current_phase == 1:
             self.epsilon = 1.0
-            self.epsilon_decay = 0.997
+            self.epsilon_decay = 0.9995  # Slower decay for better exploration
             self.learning_rate = 0.0005
-        elif self.current_phase == 2:
-            self.epsilon = 0.8
-            self.epsilon_decay = 0.998
-            self.learning_rate = 0.0004
-        elif self.current_phase == 3:
-            self.epsilon = 0.6
-            self.epsilon_decay = 0.999
-            self.learning_rate = 0.0003
-        elif self.current_phase == 4:
-            self.epsilon = 0.4
-            self.epsilon_decay = 0.9995
+        else:  # Phase 2
+            self.epsilon = 0.5  # Start with lower epsilon in phase 2
+            self.epsilon_decay = 0.9998
             self.learning_rate = 0.0002
-        else:  # Phase 5
-            self.epsilon = 0.2
-            self.epsilon_decay = 0.9999
-            self.learning_rate = 0.0001
 
     def _check_phase_advancement(self):
         """Check if conditions are met to advance to next phase"""
@@ -302,7 +294,12 @@ class Qtar:
 
     def generate_solo(self):
         """Generate a solo over the given chord progression"""
-        self.env = QtarEnvironment(scale=self.scale, chord_progression=self.chord_progression)
+        # Always generate in phase 2 (full progression)
+        self.env = QtarEnvironment(
+            scale=self.scale,
+            chord_progression=self.chord_progression,
+            training_phase=2  # Always use phase 2 for generation
+        )
         state = self.env.reset()
         melody = []
 
