@@ -175,6 +175,8 @@ class QtarEnvironment:
         reward += self._voice_leading_reward(note) * 2.0
         reward += self._rhythm_coherence_reward(rhythm) * 2.0
 
+        # penalize repetition
+        reward += self._repetition_penalty(note)
         # Motif-specific rewards
         if len(current_motif) >= 2:  # Only evaluate once we have enough notes
             reward += self._motif_structure_reward(current_motif) * 3.0
@@ -187,6 +189,32 @@ class QtarEnvironment:
                     reward += 20.0  # Big reward for good motif
 
         return reward
+
+    def _repetition_penalty(self, note):
+        """Penalize note repetition"""
+        if len(self.current_melody) == 0:
+            return 0
+        penalty = 0
+        note_in_octave = note % 12
+        # Immediate repetition penalty
+        if note == self.current_melody[-1][0]:
+            penalty -= 5.0
+            # Extra penalty for three repeated notes
+            if len(self.current_melody) >= 2:
+                if note == self.current_melody[-2][0]:
+                    penalty -= 10.0
+        # Check recent context (last 8 notes)
+        if len(self.current_melody) >= 7:
+            recent_notes = [n[0] % 12 for n in self.current_melody[-7:]] + [note_in_octave]
+            note_counts = {}
+            # Count occurrences of each note
+            for n in recent_notes:
+                note_counts[n] = note_counts.get(n, 0) + 1
+            # Penalize if any note appears too frequently
+            max_occurrences = max(note_counts.values())
+            if max_occurrences > 3:  # More than 3 times in last 8 notes
+                penalty -= (max_occurrences - 3) * 5.0
+        return penalty
 
 
     def _calculate_pattern_reward(self, note, rhythm, chord):

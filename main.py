@@ -10,7 +10,9 @@ def main():
                         help='Path to saved model')
     parser.add_argument('--output', type=str, default='qtar_solo.mid',
                         help='Output MIDI file path')
+    parser.add_argument('--training_phase', type=int, default=2, help='Training phase')
     args = parser.parse_args()
+    training_phase = args.training_phase
 
     if not os.path.exists(args.model_path):
         print(f"Error: Model file not found at {args.model_path}")
@@ -20,9 +22,11 @@ def main():
     qtar = Qtar(
         scale='C_MAJOR',
         progression_type='I_VI_IV_V',
-        training_phase=2  # Always generate in phase 2
+        training_phase=training_phase
     )
     chord_progression = qtar.chord_progression
+    print("State size:", len(qtar.env._get_state()))
+    print("Model input size:", qtar.model.shared_layers[0].in_features)
 
     print(f"Loading model from {args.model_path}")
     metadata = qtar.load_model(args.model_path)
@@ -32,7 +36,7 @@ def main():
             print(f"Learned motifs: {metadata['total_motifs_learned']}")
 
     print("\nGenerating solo...")
-    solo = qtar.generate_solo()
+    solo = qtar.generate_solo(training_phase=training_phase)
 
     # Print the solo in a readable format
     print("\nGenerated Solo:")

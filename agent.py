@@ -292,13 +292,13 @@ class Qtar:
 
         return self.training_history, self.phase_history
 
-    def generate_solo(self):
+    def generate_solo(self, training_phase=2):
         """Generate a solo over the given chord progression"""
         # Always generate in phase 2 (full progression)
         self.env = QtarEnvironment(
             scale=self.scale,
             chord_progression=self.chord_progression,
-            training_phase=2  # Always use phase 2 for generation
+            training_phase=training_phase  # Always use phase 2 for generation
         )
         state = self.env.reset()
         melody = []

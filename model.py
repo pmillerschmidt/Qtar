@@ -1,12 +1,12 @@
 import torch.nn as nn
 
+
 class QtarNetwork(nn.Module):
     def __init__(self, state_size, note_size, rhythm_size):
         super(QtarNetwork, self).__init__()
-        # Increase network capacity
         self.shared_layers = nn.Sequential(
-            nn.Linear(state_size, 512),  # Wider
-            nn.LayerNorm(512),           # Add normalization
+            nn.Linear(state_size, 512),  # state_size should be 15 for phase 2
+            nn.LayerNorm(512),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(512, 256),
@@ -15,13 +15,15 @@ class QtarNetwork(nn.Module):
             nn.Dropout(0.2),
             nn.Linear(256, 128)
         )
-        # Separate note and rhythm paths with residual connections
+
+        # Note head now outputs 24 values instead of 12
         self.note_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
             nn.ReLU(),
-            nn.Linear(64, note_size)
+            nn.Linear(64, note_size)  # note_size should be 24
         )
+
         self.rhythm_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
@@ -33,11 +35,17 @@ class QtarNetwork(nn.Module):
         shared_features = self.shared_layers(x)
         note_logits = self.note_head(shared_features)
         rhythm_logits = self.rhythm_head(shared_features)
-        # Apply key mask
+
+        # Apply key mask across both octaves
         if key_mask is not None:
-            # Set logits of invalid notes to a very negative value
             masked_note_logits = note_logits.clone()
-            masked_note_logits[:, :12] = note_logits[:, :12].masked_fill((key_mask == 0), float('-inf'))
+            # Apply mask to both octaves
+            for octave in range(2):
+                start_idx = octave * 12
+                end_idx = start_idx + 12
+                masked_note_logits[:, start_idx:end_idx] = note_logits[:, start_idx:end_idx].masked_fill(
+                    (key_mask == 0), float('-inf'))
         else:
             masked_note_logits = note_logits
+
         return masked_note_logits, rhythm_logits
