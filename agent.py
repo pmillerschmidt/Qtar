@@ -298,17 +298,6 @@ class Qtar:
             # Learning rate scheduling
             self.scheduler.step(avg_reward)
 
-            # Save best model and check early stopping
-            if avg_reward > best_reward:
-                best_reward = avg_reward
-                self.save_model('models/best_model.pt')
-                patience_counter = 0
-            else:
-                patience_counter += 1
-
-            if patience_counter >= 100 and self.early_stopping:  # Early stopping
-                print("Early stopping triggered")
-                break
 
         return self.training_history, self.phase_history
 

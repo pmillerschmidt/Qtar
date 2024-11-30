@@ -14,7 +14,7 @@ def smooth_curve(points, factor=0.8):
             smoothed_points.append(point)
     return smoothed_points
 
-def save_epoch(history, current_epoch):
+def save_epoch(history, current_epoch, include_raw_minmax=False):
     """Save visualization of training progress at specific epoch"""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), dpi=100)
     epochs = [entry['epoch'] for entry in history]
@@ -24,8 +24,9 @@ def save_epoch(history, current_epoch):
     epsilons = [entry['epsilon'] for entry in history]
     # Plot raw rewards with low alpha
     ax1.plot(epochs, avg_rewards, 'b-', alpha=0.2, label='Raw Average')
-    ax1.plot(epochs, max_rewards, 'g-', alpha=0.2, label='Raw Max')
-    ax1.plot(epochs, min_rewards, 'r-', alpha=0.2, label='Raw Min')
+    if include_raw_minmax:
+        ax1.plot(epochs, max_rewards, 'g-', alpha=0.2, label='Raw Max')
+        ax1.plot(epochs, min_rewards, 'r-', alpha=0.2, label='Raw Min')
     # Plot smoothed rewards
     ax1.plot(epochs, smooth_curve(avg_rewards), 'b-', label='Smoothed Average', linewidth=2)
     ax1.plot(epochs, smooth_curve(max_rewards), 'g--', label='Smoothed Max', linewidth=2)
