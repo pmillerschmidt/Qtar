@@ -55,6 +55,8 @@ class Qtar:
             patience=5,
             verbose=True
         )
+
+        self.use_human_feedback = use_human_feedback
         self.early_stopping = early_stopping
         self.training_history = []
         self.phase_history = []
@@ -63,12 +65,17 @@ class Qtar:
         """Save model weights and training metadata"""
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
+        # Get motifs if in phase 1
+        motifs = self.env.get_learned_motifs() if self.current_phase == 1 else []
+
         model_state = {
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
             'memory_size': len(self.memory),
-            'training_history': self.training_history
+            'training_history': self.training_history,
+            'learned_motifs': motifs,  # Save the motifs
+            'current_phase': self.current_phase
         }
 
         if metadata:
@@ -88,8 +95,39 @@ class Qtar:
         self.epsilon = checkpoint['epsilon']
         self.training_history = checkpoint.get('training_history', [])
 
-        print(f"Model loaded from {filepath}")
+        # Load motifs if transitioning to phase 2
+        if self.current_phase == 2 and 'learned_motifs' in checkpoint:
+            self.env.set_learned_motifs(checkpoint['learned_motifs'])
+            print(f"Loaded {len(checkpoint['learned_motifs'])} motifs from phase 1")
+
         return checkpoint.get('metadata', None)
+
+    def advance_phase(self):
+        """Advance to next training phase"""
+        if self.current_phase >= 2:
+            return False
+
+        print(f"\nAdvancing from phase {self.current_phase} to {self.current_phase + 1}")
+
+        # Save learned motifs before advancing
+        learned_motifs = self.env.get_learned_motifs()
+
+        self.current_phase += 1
+        self.env = QtarEnvironment(
+            chord_progression=self.chord_progression,
+            scale=self.scale,
+            beats_per_chord=4,
+            training_phase=self.current_phase,
+            use_human_feedback=self.use_human_feedback
+        )
+
+        # Pass learned motifs to new environment
+        self.env.set_learned_motifs(learned_motifs)
+
+        self._adjust_training_params()
+        print(f"Advanced to Phase 2 with {len(learned_motifs)} learned motifs")
+        return True
+
 
     def remember(self, state, actions, reward, next_state, done):
         self.memory.append((state, actions, reward, next_state, done))
@@ -185,21 +223,35 @@ class Qtar:
                 avg_reward >= thresholds['reward'] and
                 reward_stability < thresholds['stability'])
 
+
     def advance_phase(self):
         """Advance to next training phase"""
-        if self.current_phase >= 5:
+        if self.current_phase >= 2:
             return False
 
         print(f"\nAdvancing from phase {self.current_phase} to {self.current_phase + 1}")
         self.current_phase += 1
-        self.env.training_phase = self.current_phase
+
+        # Transfer motifs from env when advancing
+        learned_motifs = self.env.motif_memory.copy()
+
+        # Create new environment for phase 2
+        self.env = QtarEnvironment(
+            chord_progression=self.chord_progression,
+            scale=self.scale,
+            beats_per_chord=4,
+            training_phase=2,
+            use_human_feedback=self.use_human_feedback
+        )
+
+        # Pass learned motifs to new environment
+        self.env.learned_phase1_motifs = learned_motifs
+
         self._adjust_training_params()
 
         # Save phase transition checkpoint
-        self.save_model(f'models/phase_{self.current_phase}_start.pt')
-
-        # Reset phase-specific metrics
-        self.phase_metrics = self._initialize_phase_metrics()
+        self.save_model(f'models/phase_{self.current_phase}_start.pt',
+                        metadata={'learned_motifs': len(learned_motifs)})
 
         return True
 

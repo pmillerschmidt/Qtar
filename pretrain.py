@@ -8,7 +8,7 @@ from visualization import smooth_curve, create_phase_training_visualization
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 PHASE_CHECKPOINTS_DIR = "models/phase_checkpoints"
 
-MIN_EPOCHS = {1: 200, 2: 100}
+MIN_EPOCHS = {1: 100, 2: 100}
 
 
 def train_single_phase(qtar, phase_number, epochs=200, episodes_per_epoch=100):
@@ -140,7 +140,7 @@ def pretrain():
     """Pretrain through both phases sequentially"""
     all_phase_history = []
 
-    # Initialize model in phase 1 (single chord motifs)
+    # Initialize model in phase 1
     qtar = Qtar(
         scale='C_MAJOR',
         progression_type='I_VI_IV_V',
@@ -149,55 +149,46 @@ def pretrain():
     )
 
     try:
-        # Train each phase
-        for phase in range(1, 3):  # Only two phases now
-            print(f"\n{'=' * 50}")
-            print(f"Starting Phase {phase}")
-            print("Learning motifs on single chord" if phase == 1
-                  else "Developing patterns across progression")
-            print(f"{'=' * 50}")
+        # Train phase 1
+        print("\nPhase 1: Learning motifs on single chord")
+        phase1_history = train_single_phase(qtar, 1)
+        all_phase_history.extend(phase1_history)
 
-            # Train the current phase
-            phase_history = train_single_phase(qtar, phase)
-            all_phase_history.extend(phase_history)
+        # Save phase 1 completion with motifs
+        learned_motifs = len(qtar.env.motif_memory)
+        qtar.save_model(
+            f"{PHASE_CHECKPOINTS_DIR}/phase_1_complete.pt",
+            metadata={
+                'completed_phases': [1],
+                'phase_history': phase1_history,
+                'learned_motifs': learned_motifs
+            }
+        )
 
-            # Save phase completion checkpoint
-            os.makedirs(PHASE_CHECKPOINTS_DIR, exist_ok=True)
-            qtar.save_model(
-                f"{PHASE_CHECKPOINTS_DIR}/phase_{phase}_complete.pt",
-                metadata={
-                    'completed_phases': list(range(1, phase + 1)),
-                    'phase_history': phase_history,
-                    'motif_memory_size': len(qtar.env.motif_memory)
-                }
-            )
+        # Advance to phase 2
+        print(f"\nPhase 1 complete - learned {learned_motifs} motifs")
+        qtar.advance_phase()
 
-            # Advance to next phase if not final
-            if phase == 1:
-                print("\nPhase 1 complete - learned motifs:")
-                print(f"Total successful motifs: {len(qtar.env.motif_memory)}")
-                qtar.current_phase = 2
-                print("\nAdvancing to Phase 2: Pattern Development")
+        # Train phase 2
+        print("\nPhase 2: Developing patterns from learned motifs")
+        phase2_history = train_single_phase(qtar, 2)
+        all_phase_history.extend(phase2_history)
 
-        # Save final pretrained model
-        print("\nPretraining complete! Saving final model...")
-        os.makedirs(os.path.dirname(PRETRAINED_MODEL_PATH), exist_ok=True)
+        # Save final model
         qtar.save_model(
             PRETRAINED_MODEL_PATH,
             metadata={
                 'completed_phases': [1, 2],
-                'ready_for_human_feedback': True,
-                'total_motifs_learned': len(qtar.env.motif_memory)
+                'learned_motifs': learned_motifs,
+                'ready_for_human_feedback': True
             }
         )
 
-        # Create visualization
         create_phase_training_visualization(all_phase_history)
 
     except KeyboardInterrupt:
         print("\nPretraining interrupted by user")
         qtar.save_model(PRETRAINED_MODEL_PATH)
-        print(f"Progress saved to {PRETRAINED_MODEL_PATH}")
 
 
 if __name__ == "__main__":

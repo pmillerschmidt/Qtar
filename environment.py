@@ -25,6 +25,7 @@ class QtarEnvironment:
         self.rhythm_values = RHYTHM_VALUES
 
         self.training_phase = training_phase
+        self.chord_progression_phase_two = chord_progression
         # Phase-specific initialization
         if self.training_phase == 1:
             self.chord_progression = chord_progression[0]
@@ -35,7 +36,8 @@ class QtarEnvironment:
         self.current_position = 0
         self.current_beat = 0
         self.current_melody = []
-        self.motif_memory = []  # Successful motifs
+        self.motif_memory = []
+        self.learned_phase1_motifs = []
         self.used_notes = set()
 
         # Human feedback
@@ -55,20 +57,12 @@ class QtarEnvironment:
     def _get_state(self):
         """Get state representation based on training phase"""
         current_chord = self.chord_progression[self.current_position]
-        if self.training_phase == 1:
-            # Simpler state for phase 1 (single chord)
-            state = [
-                1.0,  # Always C major in phase 1
-                self.current_beat / self.beats_per_chord,
-                self._is_strong_beat(),
-            ]
-        else:
-            # Full state for phase 2
-            state = [
-                *self._one_hot_encode_chord(current_chord),
-                self.current_beat / self.beats_per_chord,
-                self._is_strong_beat(),
-            ]
+        # init state
+        state = [
+            *self._one_hot_encode_chord(current_chord),
+            self.current_beat / self.beats_per_chord,
+            self._is_strong_beat(),
+        ]
         # Add melodic context (same for both phases)
         melody_context = []
         for i in range(min(4, len(self.current_melody))):
@@ -88,6 +82,14 @@ class QtarEnvironment:
             state.append(0.0)
         return np.array(state + melody_context)
 
+    # Add methods to save/load motifs
+    def get_learned_motifs(self):
+        """Get current motif memory for saving"""
+        return self.motif_memory.copy()
+
+    def set_learned_motifs(self, motifs):
+        """Load previously learned motifs"""
+        self.learned_phase1_motifs = motifs
 
     def _one_hot_encode_chord(self, chord):
         # TODO: update chord vocab if using other progressions
@@ -131,10 +133,15 @@ class QtarEnvironment:
     def advance_phase(self):
         """Advance from phase 1 to phase 2"""
         if self.training_phase == 1:
+            # Store the successful motifs learned in phase 1
+            learned_motifs = self.motif_memory.copy()
+
             self.training_phase = 2
-            self.chord_progression = ['C', 'Am', 'F', 'G']
-            # Keep learned motifs for use in phase 2
-            print(f"Advancing to Phase 2 with {len(self.motif_memory)} learned motifs")
+            self.chord_progression = self.chord_progression_phase_two
+
+            # Pass the learned motifs to phase 2
+            self.learned_phase1_motifs = learned_motifs
+            print(f"Advancing to Phase 2 with {len(learned_motifs)} learned motifs")
             return True
         return False
 
@@ -159,35 +166,67 @@ class QtarEnvironment:
     def _calculate_base_reward(self, note, rhythm, chord):
         if self.training_phase == 1:
             reward = 0
-            # Basic musical rewards (lower weights)
-            reward += self._chord_tone_reward(note, chord) * 1.0
-            reward += self._voice_leading_reward(note) * 1.0
-            reward += self._rhythm_coherence_reward(rhythm) * 1.0
-            reward += self._repetition_penalty(note) * 1.0
+            # Basic musical rewards (moderate weights for good foundation)
+            reward += self._chord_tone_reward(note, chord) * 2.0
+            reward += self._voice_leading_reward(note) * 2.0
+            reward += self._rhythm_coherence_reward(rhythm) * 2.0
+            reward += self._repetition_penalty(note) * 2.0
+            reward += self._novelty_reward(note) * 1.5  # Encourage note variety
             # Only evaluate when a motif is complete (4 beats)
             if self._is_chord_complete():
                 current_motif = self._get_current_chord_notes()
+                # Evaluate complete motif
                 motif_reward = self._evaluate_motif(current_motif)
                 reward += motif_reward * 5.0  # Heavy weight on good motifs
+                # Check motif coherence
+                coherence_reward = self._evaluate_motif_coherence(current_motif)
+                reward += coherence_reward * 3.0
                 # Store successful motifs for phase 2
-                if motif_reward > 50:  # Only store good motifs
+                if motif_reward > 50 and coherence_reward > 30:  # Only store good, coherent motifs
                     self.motif_memory.append(current_motif)
-                    reward += 20.0  # Bonus for creating storable motif
+                    reward += 30.0  # Significant bonus for creating storable motif
             return reward
+
         else:  # Phase 2
             reward = 0
-            # Reduced basic rewards
-            reward += self._chord_tone_reward(note, chord) * 0.3
-            reward += self._voice_leading_reward(note) * 0.3
-            # When a chord is complete, check if it matches/varies a stored motif
+            # Reduced but still present basic rewards
+            reward += self._chord_tone_reward(note, chord) * 0.5
+            reward += self._voice_leading_reward(note) * 0.5
+            reward += self._rhythm_coherence_reward(rhythm) * 0.5
+            reward += self._repetition_penalty(note) * 1.0  # Keep this higher to prevent monotony
+            # When a chord is complete, check pattern formation
             if self._is_chord_complete():
                 current_motif = self._get_current_chord_notes()
                 previous_motifs = self._get_previous_chord_motifs()
-                # Check for ABAB pattern formation
+                # First check if current motif matches or varies any learned motifs
+                if hasattr(self, 'learned_phase1_motifs'):
+                    motif_match_reward = self._evaluate_motif_match(current_motif)
+                    reward += motif_match_reward * 3.0
+                # Check for pattern formation
                 if len(previous_motifs) >= 3:  # Have enough motifs to check pattern
+                    # Check for ABAB pattern
                     pattern_reward = self._evaluate_abab_pattern(current_motif, previous_motifs)
                     reward += pattern_reward * 10.0  # Very heavy weight on pattern formation
+                    # Check for good transformations between related motifs
+                    if len(previous_motifs) >= 1:
+                        transform_reward = self._evaluate_motif_development(current_motif, previous_motifs)
+                        reward += transform_reward * 5.0
             return reward
+
+    def _evaluate_motif_match(self, current_motif):
+        """Evaluate how well current motif matches any learned motifs"""
+        best_match_score = 0
+
+        for learned_motif in self.learned_phase1_motifs:
+            # Check for similarity allowing transposition
+            if self._is_similar_motif(current_motif, learned_motif):
+                best_match_score = 50.0
+                break
+            # Check for good transformation of learned motif
+            elif self._is_good_transformation(current_motif, learned_motif):
+                best_match_score = max(best_match_score, 30.0)
+
+        return best_match_score
 
     def _evaluate_motif(self, motif):
         """Evaluate a single motif on one chord"""
