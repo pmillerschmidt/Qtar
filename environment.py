@@ -49,9 +49,9 @@ class QtarEnvironment:
         self.current_beat = 0
         self.current_melody = []
         self.used_notes.clear()
-        # Only clear motif memory in phase 1 since phase 2 builds on learned motifs
-        if self.training_phase == 1:
-            self.motif_memory.clear()
+        # # Only clear motif memory in phase 1 since phase 2 builds on learned motifs
+        # if self.training_phase == 1:
+        #     self.motif_memory.clear()
         return self._get_state()
 
     def _get_state(self):
@@ -181,11 +181,13 @@ class QtarEnvironment:
                 reward += motif_reward * 5.0  # Heavy weight on good motifs
                 # Check motif coherence
                 coherence_reward = self._evaluate_motif_coherence(current_motif)
-                reward += coherence_reward * 3.0
-                # Store successful motifs for phase 2
-                if motif_reward > 50 and coherence_reward > 30:  # Only store good, coherent motifs
+                reward += coherence_reward * 2.0
+                # TODO: find ultimate cutoff for this
+                if reward > 400:
+                    # # Store successful motifs for phase 2
                     self.motif_memory.append(current_motif)
-                    reward += 30.0  # Significant bonus for creating storable motif
+                    reward += 20.0  # Significant bonus for creating storable motif
+                # if motif_reward > 50 and coherence_reward > 30:  # Only store good, coherent motifs
             return reward
 
         else:  # Phase 2
@@ -727,9 +729,6 @@ class QtarEnvironment:
         if len(self.current_melody) == 0:
             return 0
         reward = 0
-        # Reward longer notes on strong beats
-        if self._is_strong_beat() and rhythm >= 1.0:
-            reward += 5.0
         # Penalize very short notes in succession
         if len(self.current_melody) >= 2:
             recent_rhythms = [n[1] for n in self.current_melody[-2:]] + [rhythm]
@@ -740,7 +739,48 @@ class QtarEnvironment:
             recent_rhythms = [n[1] for n in self.current_melody[-3:]]
             if self._has_consistent_rhythm(recent_rhythms):
                 reward += 5.0
+        reward += self._rhythmic_drift_reward(rhythm)
         return reward
+
+    def _rhythmic_drift_reward(self, rhythm):
+        """Reward rhythm based on its relationship to average duration and uniqueness"""
+        if len(self.current_melody) == 0:
+            return 0
+        # Get average duration of recent notes
+        recent_durations = [n[1] for n in self.current_melody[-4:]] if len(self.current_melody) >= 4 else [n[1] for
+                                                                                                           n in
+                                                                                                           self.current_melody]
+        avg_duration = sum(recent_durations) / len(recent_durations)
+
+        # Target duration should be opposite of average with bias towards shorter notes
+        # Shift the target slightly lower to favor shorter notes
+        target_duration = (2.25 - avg_duration) * 0.8  # 0.8 factor creates bias towards shorter notes
+
+        # Balance reward based on target
+        difference = abs(rhythm - target_duration)
+        max_difference = 1.75
+        balance_reward = 30 * (1 - (difference / max_difference))
+
+        # Calculate uniqueness reward
+        duration_counts = {}
+        for dur in recent_durations:
+            # Round to nearest 0.25 to group similar durations
+            rounded_dur = round(dur * 4) / 4
+            duration_counts[rounded_dur] = duration_counts.get(rounded_dur, 0) + 1
+
+        # Round current rhythm for comparison
+        rounded_rhythm = round(rhythm * 4) / 4
+
+        # Higher reward for less used durations
+        if rounded_rhythm in duration_counts:
+            count = duration_counts[rounded_rhythm]
+            uniqueness_reward = 15 * (1 / count)  # More reward for less used durations
+        else:
+            uniqueness_reward = 15  # Maximum reward for unused durations
+
+        # Combine rewards
+        total_reward = balance_reward * 0.7 + uniqueness_reward * 0.3
+        return total_reward
 
     def _get_current_motif(self):
         """Get notes in current incomplete motif"""

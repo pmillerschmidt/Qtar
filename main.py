@@ -18,7 +18,7 @@ def main():
         print(f"Error: Model file not found at {args.model_path}")
         return
 
-    # Create Q-tar instance in phase 2 (pattern generation)
+    # Create Q-tar instance
     qtar = Qtar(
         scale='C_MAJOR',
         progression_type='I_VI_IV_V',
@@ -76,17 +76,12 @@ def main():
     unique_pitch_classes = len(set(note % 12 for note, _, _ in solo))
     avg_duration = sum(duration for _, duration, _ in solo) / total_notes
 
-    # Analyze octave usage
-    lower_octave_notes = sum(1 for note, _, _ in solo if note < 12)
-    upper_octave_notes = sum(1 for note, _, _ in solo if note >= 12)
 
     print(f"\nSolo statistics:")
     print(f"Total notes: {total_notes}")
     print(f"Unique pitches: {unique_pitches}")
     print(f"Unique pitch classes: {unique_pitch_classes}")
     print(f"Average note duration: {avg_duration:.2f} beats")
-    print(f"Lower octave notes: {lower_octave_notes} ({lower_octave_notes / total_notes * 100:.1f}%)")
-    print(f"Upper octave notes: {upper_octave_notes} ({upper_octave_notes / total_notes * 100:.1f}%)")
 
     # Analyze patterns if available
     if hasattr(qtar.env, 'motif_memory'):
@@ -94,23 +89,6 @@ def main():
         print(f"Available motifs: {len(qtar.env.motif_memory)}")
 
 
-def analyze_patterns(solo):
-    """Analyze the solo for common patterns"""
-    if len(solo) < 4:
-        return []
-
-    patterns = []
-    # Look for 4-note patterns
-    for i in range(len(solo) - 3):
-        pattern = solo[i:i + 4]
-        # Convert to relative intervals
-        intervals = [
-            (b[0] - a[0], b[1])  # (pitch interval, duration)
-            for a, b in zip(pattern[:-1], pattern[1:])
-        ]
-        patterns.append(intervals)
-
-    return patterns
 
 
 if __name__ == "__main__":

@@ -65,22 +65,17 @@ class Qtar:
         """Save model weights and training metadata"""
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-        # Get motifs if in phase 1
-        motifs = self.env.get_learned_motifs() if self.current_phase == 1 else []
-
         model_state = {
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
             'memory_size': len(self.memory),
             'training_history': self.training_history,
-            'learned_motifs': motifs,  # Save the motifs
+            'motifs': self.env.motif_memory,
             'current_phase': self.current_phase
         }
-
         if metadata:
             model_state['metadata'] = metadata
-
         torch.save(model_state, filepath)
         print(f"Model saved to {filepath}")
 
@@ -94,13 +89,9 @@ class Qtar:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epsilon = checkpoint['epsilon']
         self.training_history = checkpoint.get('training_history', [])
+        self.env.motif_memory = checkpoint.get('motifs', [])
 
-        # Load motifs if transitioning to phase 2
-        if self.current_phase == 2 and 'learned_motifs' in checkpoint:
-            self.env.set_learned_motifs(checkpoint['learned_motifs'])
-            print(f"Loaded {len(checkpoint['learned_motifs'])} motifs from phase 1")
-
-        return checkpoint.get('metadata', None)
+        print(f"Loaded model with {len(self.env.motif_memory)} motifs")
 
     def advance_phase(self):
         """Advance to next training phase"""
@@ -205,10 +196,6 @@ class Qtar:
             self.epsilon_decay = 0.9998
             self.learning_rate = 0.0002
 
-    def _check_phase_advancement(self):
-        """Check if conditions are met to advance to next phase"""
-        if self.current_phase >= 5:
-            return False
 
         metrics = self.phase_metrics
         thresholds = metrics['thresholds'][self.current_phase]
@@ -287,18 +274,6 @@ class Qtar:
                           f"Reward: {total_reward:.2f}, Steps: {steps}, "
                           f"Epsilon: {self.epsilon:.4f}")
 
-                # Check for phase advancement
-                if self._check_phase_advancement():
-                    self.advance_phase()
-                    # Save phase transition statistics
-                    self.phase_history.append({
-                        'epoch': epoch + 1,
-                        'episode': episode + 1,
-                        'phase': self.current_phase,
-                        'avg_reward': np.mean(self.phase_metrics['rewards']),
-                        'stability': np.std(self.phase_metrics['rewards'])
-                    })
-
             # Calculate epoch statistics
             avg_reward = sum(epoch_rewards) / len(epoch_rewards)
             max_reward = max(epoch_rewards)
@@ -312,19 +287,13 @@ class Qtar:
                 'epsilon': self.epsilon,
                 'memory_size': len(self.memory)
             }
-
             self.training_history.append(epoch_stats)
 
-            print(f"\nEpoch {epoch + 1} Statistics:")
+            print(f"\nEpoch Statistics:")
             print(f"Average Reward: {avg_reward:.2f}")
             print(f"Max Reward: {max_reward:.2f}")
             print(f"Min Reward: {min_reward:.2f}")
             print(f"Epsilon: {self.epsilon:.4f}")
-
-            # Save visualization every 100 epochs
-            if (epoch + 1) % 100 == 0:
-                filepath = save_epoch(self.training_history, epoch + 1)
-                print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
 
             # Learning rate scheduling
             self.scheduler.step(avg_reward)
