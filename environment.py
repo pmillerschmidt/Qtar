@@ -173,8 +173,9 @@ class QtarEnvironment:
             reward += self._repetition_penalty(note) * 2.0
             reward += self._novelty_reward(note) * 1.5  # Encourage note variety
             # Only evaluate when a motif is complete (4 beats)
-            if self._is_chord_complete():
-                current_motif = self._get_current_chord_notes()
+            if self._is_chord_complete(rhythm):
+                # curr motif if past notes + curr note
+                current_motif = self._get_current_chord_notes() + [(note, rhythm, self.current_beat)]
                 # Evaluate complete motif
                 motif_reward = self._evaluate_motif(current_motif)
                 reward += motif_reward * 5.0  # Heavy weight on good motifs
@@ -195,7 +196,7 @@ class QtarEnvironment:
             reward += self._rhythm_coherence_reward(rhythm) * 0.5
             reward += self._repetition_penalty(note) * 1.0  # Keep this higher to prevent monotony
             # When a chord is complete, check pattern formation
-            if self._is_chord_complete():
+            if self._is_chord_complete(rhythm):
                 current_motif = self._get_current_chord_notes()
                 previous_motifs = self._get_previous_chord_motifs()
                 # First check if current motif matches or varies any learned motifs
@@ -209,7 +210,7 @@ class QtarEnvironment:
                     reward += pattern_reward * 10.0  # Very heavy weight on pattern formation
                     # Check for good transformations between related motifs
                     if len(previous_motifs) >= 1:
-                        transform_reward = self._evaluate_motif_development(current_motif, previous_motifs)
+                        transform_reward = self._evaluate_motif_development(previous_motifs + [current_motif])
                         reward += transform_reward * 5.0
             return reward
 
@@ -231,19 +232,12 @@ class QtarEnvironment:
     def _evaluate_motif(self, motif):
         """Evaluate a single motif on one chord"""
         reward = 0
-
         if not self._has_valid_motif_structure(motif):
             return -10.0
-
         # Melodic shape
-        reward += self._evaluate_melodic_shape(motif) * 3.0
-
+        reward += self._evaluate_melodic_shape(motif)
         # Rhythmic interest
-        reward += self._evaluate_rhythmic_structure(motif) * 2.0
-
-        # Coherence
-        reward += self._evaluate_motif_coherence(motif) * 2.0
-
+        reward += self._evaluate_rhythmic_structure(motif)
         return reward
 
     def _evaluate_abab_pattern(self, current_motif, previous_motifs):
@@ -278,25 +272,6 @@ class QtarEnvironment:
 
         return (intervals1 == intervals2 and
                 all(abs(r1 - r2) < 0.25 for r1, r2 in zip(rhythms1, rhythms2)))
-
-    def _calculate_motif_reward(self, note, rhythm, chord):
-        """Phase 1: Reward for creating good motifs"""
-        reward = 0
-        # Get current motif (last 2-4 beats of notes)
-        current_motif = self._get_current_motif()
-
-        # Motif-specific rewards
-        if len(current_motif) >= 2:  # Only evaluate once we have enough notes
-            reward += self._motif_structure_reward(current_motif) * 3.0
-            reward += self._motif_uniqueness_reward(current_motif) * 2.0
-
-            # If motif is complete and good, store it
-            if self._is_motif_complete(current_motif):
-                if self._is_good_motif(current_motif):
-                    self.motif_memory.append(current_motif)
-                    reward += 20.0  # Big reward for good motif
-
-        return reward
 
     def _repetition_penalty(self, note):
         """Penalize note repetition and alternating patterns"""
@@ -355,24 +330,6 @@ class QtarEnvironment:
             current_freq = note_frequencies.get(note_in_octave, 0)
             if current_freq <= min(note_frequencies.values()):
                 reward += 5.0
-        return reward
-
-    def _calculate_pattern_reward(self):
-        """Phase 2: Reward for patterns across multiple chords"""
-        reward = 0
-
-        # Only evaluate when a chord is complete
-        if self._is_chord_complete():
-            current_motif = self._get_current_chord_notes()
-
-            # Get previous motifs in the current phrase
-            previous_motifs = self._get_previous_chord_motifs()
-
-            if previous_motifs:
-                # Check for patterns (ABAB or AABB)
-                pattern_reward = self._evaluate_motif_patterns(current_motif, previous_motifs)
-                reward += pattern_reward
-
         return reward
 
     def _is_good_motif(self, motif):
@@ -452,11 +409,8 @@ class QtarEnvironment:
 
         return False
 
-    def _is_chord_complete(self):
-        """Check if current note completes a chord (4 beats)"""
-        current_chord_notes = self._get_current_chord_notes()
-        total_duration = sum(note[1] for note in current_chord_notes)
-        return abs(total_duration - self.beats_per_chord) < 0.01  # Allow small rounding errors
+    def _is_chord_complete(self, rhythm):
+        return self.current_beat + rhythm == self.beats_per_chord
 
     def _get_current_chord_notes(self):
         """Get all notes from the current chord"""
@@ -507,7 +461,7 @@ class QtarEnvironment:
 
         # Must fill exactly one chord (4 beats)
         total_duration = sum(note[1] for note in motif)
-        if abs(total_duration - self.beats_per_chord) > 0.01:
+        if abs(total_duration - self.beats_per_chord) > 0:
             return False
 
         return True
@@ -862,3 +816,4 @@ class QtarEnvironment:
             reward -= 5.0
 
         return reward
+
