@@ -32,7 +32,7 @@ def train_single_phase(qtar, phase_number, episodes_per_epoch=100):
         phase_history.append(epoch_history)
         # Save visualization every 100 epochs
         if (epoch + 1) % 25 == 0:
-            filepath = save_epoch(phase_history, epoch + 1)
+            filepath = save_epoch(phase_history, epoch + 1, training_phase=training_phase)
             print(f"Saved training visualization at epoch {epoch + 1} to {filepath}")
     return phase_history
 

@@ -107,7 +107,6 @@ class QtarEnvironment:
         beats_remaining = self.beats_per_chord - self.current_beat
         if duration > beats_remaining:
             duration = beats_remaining
-
         reward = self._calculate_base_reward(note_action, duration, current_chord)
         # Add human feedback if enabled
         final_reward = self._incorporate_human_feedback(reward)
@@ -177,16 +176,15 @@ class QtarEnvironment:
                 # Evaluate complete motif
                 motif_reward = self._evaluate_motif(current_motif)
                 reward += motif_reward
-                # Check motif coherence
-                coherence_reward = self._evaluate_motif_coherence(current_motif)
-                reward += coherence_reward
                 # TODO: find ultimate cutoff for this
-                if reward > 200:
-                # Store successful motifs for phase 2
-                    self.motif_memory.append(current_motif)
-                    reward += 20.0  # good motif bonus
+                if reward > 65:
+                    motif_match_reward = self._evaluate_motif_match(current_motif)
+                    if motif_match_reward > 20:
+                        reward -= motif_match_reward
+                    else: # reward unique motifs
+                        self.motif_memory.append(current_motif)
+                        reward += 10.0  # good motif bonus
             return reward
-
         else:  # Phase 2
             reward = 0
             # Reduced but still present basic rewards
@@ -216,8 +214,8 @@ class QtarEnvironment:
     def _evaluate_motif_match(self, current_motif):
         """Evaluate how well current motif matches any learned motifs"""
         best_match_score = 0
-
-        for learned_motif in self.learned_phase1_motifs:
+        motifs = self.motif_memory if self.training_phase == 1 else self.learned_phase1_motifs
+        for learned_motif in motifs:
             # Check for similarity allowing transposition
             if self._is_similar_motif(current_motif, learned_motif):
                 best_match_score = 50.0
@@ -225,7 +223,6 @@ class QtarEnvironment:
             # Check for good transformation of learned motif
             elif self._is_good_transformation(current_motif, learned_motif):
                 best_match_score = max(best_match_score, 30.0)
-
         return best_match_score
 
     def _evaluate_motif(self, motif):
@@ -251,7 +248,6 @@ class QtarEnvironment:
             reward -= 10.0
         if len(set(durations)) > 4:  # Too many different rhythmic values
             reward -= 5.0
-
         return reward
 
     def _evaluate_abab_pattern(self, current_motif, previous_motifs):
@@ -492,22 +488,18 @@ class QtarEnvironment:
         # Target duration should be opposite of average with bias towards shorter notes
         # Shift the target slightly lower to favor shorter notes
         target_duration = (2.25 - avg_duration) * 0.8  # 0.8 factor creates bias towards shorter notes
-
         # Balance reward based on target
         difference = abs(rhythm - target_duration)
         max_difference = 1.75
         balance_reward = 10 * (1 - (difference / max_difference))
-
         # Calculate uniqueness reward
         duration_counts = {}
         for dur in recent_durations:
             # Round to nearest 0.25 to group similar durations
             rounded_dur = round(dur * 4) / 4
             duration_counts[rounded_dur] = duration_counts.get(rounded_dur, 0) + 1
-
         # Round current rhythm for comparison
         rounded_rhythm = round(rhythm * 4) / 4
-
         # Higher reward for less used durations
         if rounded_rhythm in duration_counts:
             count = duration_counts[rounded_rhythm]
@@ -518,30 +510,4 @@ class QtarEnvironment:
         total_reward = balance_reward * 0.7 + uniqueness_reward * 0.3
         return total_reward
 
-    def _evaluate_motif_coherence(self, motif):
-        """Evaluate how well the motif works as a unified musical idea"""
-        if len(motif) < 2:
-            return 0.0
-        reward = 0
-        notes = [note[0] for note in motif]
-        durations = [note[1] for note in motif]
-        # 2. Check for balanced structure
-        total_duration = sum(durations)
-        midpoint = total_duration / 2
-        current_time = 0
-        for dur in durations:
-            current_time += dur
-            if abs(current_time - midpoint) < 0.25:  # Natural division near middle
-                reward += 10.0
-                break
-        # 5. Check for good use of range
-        note_range = max(notes) - min(notes)
-        if 4 <= note_range <= 12:  # Good melodic range, not too wide or narrow
-            reward += 10.0
-        # 6. Penalize excessive complexity
-        if len(notes) > 8:  # Too many notes
-            reward -= 10.0
-        if len(set(durations)) > 4:  # Too many different rhythmic values
-            reward -= 5.0
-        return reward
 

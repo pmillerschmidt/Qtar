@@ -36,16 +36,13 @@ class QtarNetwork(nn.Module):
         note_logits = self.note_head(shared_features)
         rhythm_logits = self.rhythm_head(shared_features)
 
-        # Apply key mask across both octaves
         if key_mask is not None:
             masked_note_logits = note_logits.clone()
-            # Apply mask to both octaves
             for octave in range(2):
                 start_idx = octave * 12
                 end_idx = start_idx + 12
                 masked_note_logits[:, start_idx:end_idx] = note_logits[:, start_idx:end_idx].masked_fill(
                     (key_mask == 0), float('-inf'))
-        else:
-            masked_note_logits = note_logits
+            return masked_note_logits, rhythm_logits
 
-        return masked_note_logits, rhythm_logits
+        return note_logits, rhythm_logits

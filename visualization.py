@@ -14,7 +14,7 @@ def smooth_curve(points, factor=0.8):
             smoothed_points.append(point)
     return smoothed_points
 
-def save_epoch(history, current_epoch, include_raw_minmax=False):
+def save_epoch(history, current_epoch, include_raw_minmax=False, training_phase=1):
     """Save visualization of training progress at specific epoch"""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), dpi=100)
     epochs = [entry['epoch'] for entry in history]
@@ -27,11 +27,13 @@ def save_epoch(history, current_epoch, include_raw_minmax=False):
     if include_raw_minmax:
         ax1.plot(epochs, max_rewards, 'g-', alpha=0.2, label='Raw Max')
         ax1.plot(epochs, min_rewards, 'r-', alpha=0.2, label='Raw Min')
+        ax1.fill_between(epochs, min_rewards, max_rewards, alpha=0.1, color='blue')
+    else:
+        ax1.fill_between(epochs, smooth_curve(min_rewards), smooth_curve(max_rewards), alpha=0.1, color='blue')
     # Plot smoothed rewards
     ax1.plot(epochs, smooth_curve(avg_rewards), 'b-', label='Smoothed Average', linewidth=2)
     ax1.plot(epochs, smooth_curve(max_rewards), 'g--', label='Smoothed Max', linewidth=2)
     ax1.plot(epochs, smooth_curve(min_rewards), 'r--', label='Smoothed Min', linewidth=2)
-    ax1.fill_between(epochs, min_rewards, max_rewards, alpha=0.1, color='blue')
     ax1.set_title('Training Rewards Over Time')
     ax1.set_xlabel('Epoch')
     ax1.set_ylabel('Reward')
@@ -48,7 +50,7 @@ def save_epoch(history, current_epoch, include_raw_minmax=False):
     ax2.legend()
     plt.tight_layout()
     # Save with epoch number
-    filepath = os.path.join(VISUALIZATION_DIR, f'training_progress_epoch_{current_epoch}.png')
+    filepath = os.path.join(VISUALIZATION_DIR, f'training_progress_phase_{training_phase}_epoch_{current_epoch}.png')
     plt.savefig(filepath)
     plt.close()
     return filepath
