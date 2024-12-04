@@ -178,21 +178,30 @@ const submitFeedback = async () => {
   }, []);
 
   return (
-      <div className="w-full max-w-6xl mx-auto p-6 space-y-6 bg-gray-50">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Q-tar Feedback Interface</h2>
-          <button
+    <div className="h-screen w-screen flex flex-col bg-gray-100">
+      {/* Fixed Header */}
+      <header className="flex-none bg-white border-b">
+        <div className="max-w-5xl mx-auto w-full px-6 py-3">
+          <div className="flex justify-between items-center">
+            <h1 className="text-xl font-bold">Q-tar Feedback Interface</h1>
+            <button
               onClick={() => setShowHelp(!showHelp)}
-              className="p-2 rounded-full hover:bg-gray-100"
-          >
-            <AlertCircle size={24}/>
-          </button>
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <AlertCircle className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+      </header>
 
-        {showHelp && (
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-2">Rating Guide:</h3>
-              <ul className="list-disc pl-5 space-y-1">
+      {/* Scrollable Main Content */}
+      <main className="flex-1 overflow-auto px-6 py-4">
+        <div className="max-w-3xl mx-auto w-full">
+          {/* Help Section */}
+          {showHelp && (
+            <div className="bg-blue-50 p-4 rounded-lg text-sm mb-4">
+              <h2 className="font-semibold mb-2">Rating Guide:</h2>
+              <ul className="space-y-1 list-disc pl-5">
                 <li>1 Star: Poor - Doesn't sound musical</li>
                 <li>2 Stars: Fair - Basic musical structure but needs improvement</li>
                 <li>3 Stars: Good - Decent musical phrase</li>
@@ -200,80 +209,117 @@ const submitFeedback = async () => {
                 <li>5 Stars: Excellent - Outstanding musical quality</li>
               </ul>
             </div>
-        )}
+          )}
 
-        <div className="space-y-8">
-          {phrases.map((phrase, phraseIndex) => (
-              <div key={phraseIndex} className="bg-white p-6 rounded-lg shadow-md">
+          {/* Phrases */}
+          <div className="space-y-4">
+            {phrases.map((phrase, phraseIndex) => (
+              <div
+                key={phraseIndex}
+                className="bg-white rounded-lg shadow-sm border p-4"
+              >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Phrase {phraseIndex + 1}</h3>
-                  <div className="flex gap-2">
-                    <button
-                        onClick={() => setIsMuted(!isMuted)}
-                        className="p-2 rounded-full hover:bg-gray-100"
-                    >
-                      {isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}
-                    </button>
-                    <button
-                        onClick={() => playPhrase(phraseIndex)}
-                        className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-                    >
-                      {isPlaying ? <Pause size={20}/> : <Play size={20}/>}
-                      {isPlaying ? 'Stop' : 'Play'}
-                    </button>
+                  <h2 className="text-lg font-semibold">
+                    Phrase {phraseIndex + 1}
+                  </h2>
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                {/* Piano Roll Container */}
+                <div className="w-full overflow-x-auto bg-gray-50 rounded-lg p-2">
+                  <div className="min-w-[500px]">
+                    <PianoRoll
+                      phrase={phrase}
+                      isPlaying={isPlaying}
+                      currentBeat={currentBeat}
+                    />
                   </div>
                 </div>
-
-                <PianoRoll
-                    phrase={phrase}
-                    isPlaying={isPlaying}
-                    currentBeat={currentBeat}
-                />
-
-                <div className="flex items-center justify-center gap-2 mt-4">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                      <button
-                          key={rating}
-                          onClick={() => handleRating(phraseIndex, rating)}
-                          className={`p-2 rounded-full transition-colors ${
-                              ratings[phraseIndex] === rating
-                                  ? 'text-yellow-500'
-                                  : 'text-gray-300 hover:text-yellow-500'
-                          }`}
-                      >
-                        <Star size={24} fill={ratings[phraseIndex] >= rating ? 'currentColor' : 'none'}/>
-                      </button>
-                  ))}
-                </div>
               </div>
-          ))}
-        </div>
-
-        <div className="flex justify-between items-center">
-          <button
-              onClick={startTraining}
-              disabled={isTraining}
-              className="bg-purple-500 text-white px-6 py-2 rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50"
-          >
-            {isTraining ? 'Training...' : 'Train Model'}
-          </button>
-
-          <div className="flex items-center gap-4">
-            {submitStatus && (
-                <span className={`text-sm ${submitStatus.includes('Failed') ? 'text-red-500' : 'text-green-500'}`}>
-              {submitStatus}
-            </span>
-            )}
-            <button
-                onClick={submitFeedback}
-                className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-                disabled={Object.keys(ratings).length !== phrases.length}
-            >
-              Submit Feedback
-            </button>
+            ))}
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Fixed Footer */}
+      <footer className="flex-none bg-white border-t pb-6">
+        <div className="max-w-5xl mx-auto w-full px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            {/* Train Model */}
+            <button
+              onClick={startTraining}
+              disabled={isTraining}
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {isTraining ? 'Training...' : 'Train Model'}
+            </button>
+
+            {/* Play Button */}
+            <button
+              onClick={() => playPhrase(0)}
+              className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              {isPlaying ? (
+                <>
+                  <Pause className="w-5 h-5" />
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  <span>Play</span>
+                </>
+              )}
+            </button>
+
+            {/* Star Rating */}
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  onClick={() => handleRating(0, rating)}
+                  className={`p-1.5 rounded-full transition-colors ${
+                    ratings[0] === rating
+                      ? 'text-yellow-500'
+                      : 'text-gray-300 hover:text-yellow-500'
+                  }`}
+                >
+                  <Star
+                    className="w-6 h-6"
+                    fill={ratings[0] >= rating ? 'currentColor' : 'none'}
+                  />
+                </button>
+              ))}
+            </div>
+
+            {/* Submit Feedback */}
+            <div className="flex items-center gap-4">
+              {submitStatus && (
+                <span
+                  className={`text-sm ${
+                    submitStatus.includes('Failed') ? 'text-red-500' : 'text-green-500'
+                  }`}
+                >
+                  {submitStatus}
+                </span>
+              )}
+              <button
+                onClick={submitFeedback}
+                disabled={Object.keys(ratings).length !== phrases.length}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Submit Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 };
 

@@ -188,10 +188,10 @@ class QtarEnvironment:
         else:  # Phase 2
             reward = 0
             # Reduced but still present basic rewards
-            reward += self._chord_tone_reward(note, chord) * 0.5
-            reward += self._voice_leading_reward(note) * 0.5
-            reward += self._rhythm_coherence_reward(rhythm) * 0.5
-            reward += self._repetition_penalty(note) * 1.0  # Keep this higher to prevent monotony
+            reward += self._chord_tone_reward(note, chord) * 0.75
+            reward += self._voice_leading_reward(note) * 0.75
+            reward += self._rhythm_coherence_reward(rhythm) * 0.75
+            reward += self._repetition_penalty(note) * 1.5  # Keep this higher to prevent monotony
             # When a chord is complete, check pattern formation
             if self._is_chord_complete(rhythm):
                 current_motif = self._get_current_chord_notes()

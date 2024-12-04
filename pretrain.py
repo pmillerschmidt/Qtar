@@ -1,7 +1,5 @@
 import argparse
 
-import numpy as np
-
 from agent import Qtar
 import os
 
@@ -11,7 +9,7 @@ PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 PHASE_CHECKPOINTS_DIR = "models/phase_checkpoints"
 
 EPOCHS = {1: 100,
-          2: 50}
+          2: 100}
 
 
 def train_single_phase(qtar, phase_number, episodes_per_epoch=100):

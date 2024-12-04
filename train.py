@@ -67,7 +67,6 @@ async def get_current_solo():
         solo = get_current_solo.current_solo
         notes = []
         current_beat = 0
-
         for note, duration, _ in solo:
             # Handle two octaves
             octave = note // 12  # 0 or 1 for lower/upper octave
@@ -75,7 +74,8 @@ async def get_current_solo():
             note_name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][note_in_octave]
             notes.append({
                 # TODO: fix feedback.tsx
-                "note": f"{note_name}{octave + 4}",  # Octave 4 and 5
+                # "note": f"{note_name}{octave + 4}",  # Octave 4 and 5
+                "note": f"{note_name}",  # Octave 4 and 5
                 "duration": duration,
                 "beat": current_beat
             })

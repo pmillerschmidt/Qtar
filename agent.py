@@ -191,9 +191,9 @@ class Qtar:
             self.epsilon_decay = 0.9995  # Slower decay for better exploration
             self.learning_rate = 0.0005
         else:  # Phase 2
-            self.epsilon = 0.5  # Start with lower epsilon in phase 2
-            self.epsilon_decay = 0.9998
-            self.learning_rate = 0.0002
+            self.epsilon = 0.75  # Start with lower epsilon in phase 2
+            self.epsilon_decay = 0.9995
+            self.learning_rate = 0.0004
         metrics = self.phase_metrics
         thresholds = metrics['thresholds'][self.current_phase]
         if len(metrics['rewards']) < 1000:
