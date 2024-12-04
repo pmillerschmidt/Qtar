@@ -74,3 +74,4 @@ visualizations/
 
 # frontend
 frontend/.next/*
+/.next/
