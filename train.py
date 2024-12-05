@@ -1,3 +1,5 @@
+import argparse
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -193,7 +195,7 @@ def train_model():
                 qtar.save_model(MODEL_PATH, metadata=metadata)
 
             # Regular training step
-            qtar.train(episodes=1)
+            qtar.train(num_episodes=1)
             episode += 1
 
             if episode % 50 == 0:
@@ -211,9 +213,21 @@ def run_server():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--from_pretrained', action='store_true')
+    args = parser.parse_args()
     server_thread = threading.Thread(target=run_server)
     server_thread.daemon = True
     server_thread.start()
+
+    model_path = PRETRAINED_MODEL_PATH if args.from_pretrained else MODEL_PATH
+
+    if os.path.exists(model_path):
+        print(f"Loading pretrained model from {model_path}")
+        metadata = qtar.load_model(model_path)
+        print(f"Loaded model with {len(qtar.env.motif_memory)} learned motifs")
+    else:
+        raise ValueError("No pretrained model found. Please run pretraining first.")
 
     print("Starting training with human feedback...")
     print("Open http://localhost:3000 to provide feedback")
