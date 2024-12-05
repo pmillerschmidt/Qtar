@@ -122,6 +122,7 @@ const FeedbackInterface = () => {
       return;
     }
 
+    // Start new playback
     setIsPlaying(true);
     audioStartTime.current = Date.now();
     let beat = 0;
@@ -129,6 +130,7 @@ const FeedbackInterface = () => {
     // Start playback
     audioEngine.playPhrase(phrases[phraseIndex]);
 
+    // Update beat counter for visualization
     playbackTimer.current = setInterval(() => {
       if (beat >= 16) {
         setIsPlaying(false);
@@ -164,35 +166,61 @@ const FeedbackInterface = () => {
   }
 };
 
-const submitFeedback = async () => {
-    try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          rating: ratings[0] // Assuming single phrase rating
-        }),
-      });
+  const submitFeedback = async () => {
+      setIsLoadingMelody(true);
+      try {
+          // First submit feedback
+          const feedbackResponse = await fetch('/api/feedback', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                  rating: ratings[0]
+              }),
+          });
 
-      if (response.ok) {
-        console.log('Feedback submitted:', ratings[0]); // Log to dev console
-        setSubmitStatus('Feedback submitted successfully!');
+          if (feedbackResponse.ok) {
+              // Then trigger training
+              const response = await fetch('/api/feedback', {
+                  method: 'PUT'
+              });
+              if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+              }
 
-        // Clear status after 3 seconds
-        setTimeout(() => {
-          setSubmitStatus('');
-          setRatings({});  // Clear ratings after successful submission
-        }, 3000);
+              // Keep polling until we get a new melody
+              let newMelody = null;
+              while (!newMelody) {
+                  const melodyResponse = await fetch('/api/feedback');
+                  if (!melodyResponse.ok) {
+                      throw new Error(`HTTP error! status: ${melodyResponse.status}`);
+                  }
+                  const melodyData = await melodyResponse.json();
 
-        // Wait for next solo
-        await fetchPhrase();
+                  // Check if we have a valid melody
+                  if (melodyData.status === 'ready' && melodyData.notes && melodyData.notes.length > 0) {
+                      newMelody = melodyData;
+                      setPhrases([newMelody]);
+                      setRatings({}); // Clear ratings for new melody
+                      break;
+                  }
+
+                  // Wait a bit before polling again
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+
+              setSubmitStatus('Feedback submitted successfully!');
+              setTimeout(() => {
+                  setSubmitStatus('');
+              }, 3000);
+          }
+      } catch (error) {
+          console.error('Failed to submit feedback or get new melody:', error);
+          setSubmitStatus('Failed to submit feedback');
+      } finally {
+          setIsLoadingMelody(false);
       }
-    } catch (error) {
-      console.error('Failed to submit feedback:', error);
-      setSubmitStatus('Failed to submit feedback');
-    }
   };
 
   // Poll for new solos periodically
@@ -298,7 +326,7 @@ const submitFeedback = async () => {
               {isPlaying ? (
                   <>
                     <Pause className="w-5 h-5"/>
-                    <span>Stop</span>
+                    <span>Pause</span>
                   </>
               ) : (
                   <>
@@ -314,35 +342,35 @@ const submitFeedback = async () => {
                   <button
                       key={rating}
                       onClick={() => handleRating(0, rating)}
-                  className={`p-1.5 rounded-full transition-colors ${
-                    ratings[0] === rating
-                      ? 'text-yellow-500'
-                      : 'text-gray-300 hover:text-yellow-500'
-                  }`}
-                >
-                  <Star
-                    className="w-6 h-6"
-                    fill={ratings[0] >= rating ? 'currentColor' : 'none'}
-                  />
-                </button>
+                      className={`p-1.5 rounded-full transition-colors ${
+                          ratings[0] === rating
+                              ? 'text-yellow-500'
+                              : 'text-gray-300 hover:text-yellow-500'
+                      }`}
+                  >
+                    <Star
+                        className="w-6 h-6"
+                        fill={ratings[0] >= rating ? 'currentColor' : 'none'}
+                    />
+                  </button>
               ))}
             </div>
 
             {/* Submit Feedback */}
             <div className="flex items-center gap-4">
               {submitStatus && (
-                <span
-                  className={`text-sm ${
-                    submitStatus.includes('Failed') ? 'text-red-500' : 'text-green-500'
-                  }`}
-                >
+                  <span
+                      className={`text-sm ${
+                          submitStatus.includes('Failed') ? 'text-red-500' : 'text-green-500'
+                      }`}
+                  >
                   {submitStatus}
                 </span>
               )}
               <button
-                onClick={submitFeedback}
-                disabled={Object.keys(ratings).length !== phrases.length}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                  onClick={submitFeedback}
+                  disabled={Object.keys(ratings).length !== phrases.length}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 Submit Feedback
               </button>
