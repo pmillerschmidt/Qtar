@@ -177,7 +177,7 @@ class QtarEnvironment:
                 motif_reward = self._evaluate_motif(current_motif)
                 reward += motif_reward
                 # TODO: find ultimate cutoff for this
-                if reward > 65:
+                if reward > 55:
                     motif_match_reward = self._evaluate_motif_match(current_motif)
                     if motif_match_reward > 20:
                         reward -= motif_match_reward
@@ -204,7 +204,7 @@ class QtarEnvironment:
                 if len(previous_motifs) >= 3:  # Have enough motifs to check pattern
                     # Check for ABAB pattern
                     pattern_reward = self._evaluate_abab_pattern(current_motif, previous_motifs)
-                    reward += pattern_reward * 10.0  # Very heavy weight on pattern formation
+                    reward += pattern_reward * 5.0  # Very heavy weight on pattern formation
                     # Check for good transformations between related motifs
                     if len(previous_motifs) >= 1:
                         transform_reward = self._evaluate_motif_development(previous_motifs + [current_motif])
@@ -314,7 +314,7 @@ class QtarEnvironment:
         reward = 0
         # High reward for first use of a note
         if note_in_octave not in self.used_notes:
-            reward += 10.0
+            reward += 5.0
             self.used_notes.add(note_in_octave)
         # Additional reward for using less-used notes
         if len(self.current_melody) > 0:
@@ -325,7 +325,7 @@ class QtarEnvironment:
             # If this note is among the least used
             current_freq = note_frequencies.get(note_in_octave, 0)
             if current_freq <= min(note_frequencies.values()):
-                reward += 5.0
+                reward += 2.0
         return reward
 
     def _evaluate_motif_development(self, motifs):
@@ -423,13 +423,11 @@ class QtarEnvironment:
         if interval == 0:
             return 0.0  # no reward for repetition
         if interval <= 2:
-            return 3.0  # Stepwise motion
-        elif interval <= 4:
-            return 2.0  # Small leap
+            return 2.0  # Stepwise motion
         elif interval <= 7:
             return 1.0  # Medium leap
         elif interval > 12:
-            return -5.0  # Penalize leaps larger than an octave
+            return -4.0  # Penalize leaps larger than an octave
         return 0.0
 
     def _is_rhythmic_variation(self, motif1, motif2):

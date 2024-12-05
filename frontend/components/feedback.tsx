@@ -6,19 +6,25 @@ import { AudioEngine } from './AudioEngine';
 import PianoRoll from './PianoRoll';
 
 // Musical constants
-const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const MIDI_START = 60; // Middle C
+const NOTES = [
+  // Octave 4
+  'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4',
+  // Octave 5
+  'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5', 'F#5', 'G5', 'G#5', 'A5', 'A#5', 'B5'
+];
+
+const MIDI_START = 60; // Middle C (C4)
 const TOTAL_NOTES = 24; // Two octaves
 const SECONDS_PER_BEAT = 0.5; // 120 BPM
 const PIXELS_PER_BEAT = 40;
 const NOTE_HEIGHT = 20;
 
-// Chord definitions
+// Chord definitions with octaves
 const CHORD_NOTES = {
-  'C':  ['C', 'E', 'G'],
-  'Am': ['A', 'C', 'E'],
-  'F':  ['F', 'A', 'C'],
-  'G':  ['G', 'B', 'D']
+  'C':  ['C4', 'E4', 'G4'],
+  'Am': ['A4', 'C4', 'E4'],
+  'F':  ['F4', 'A4', 'C5'],
+  'G':  ['G4', 'B4', 'D5']
 };
 
 const FeedbackInterface = () => {
