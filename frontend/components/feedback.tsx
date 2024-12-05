@@ -229,6 +229,22 @@ const FeedbackInterface = () => {
     return () => clearInterval(interval);
   }, []);
 
+
+  useEffect(() => {
+  const handleKeyPress = (event: KeyboardEvent) => {
+    if (event.key === 'Enter' && ratings[0]) {  // Only if a rating is selected
+      submitFeedback();
+    }
+  };
+
+  document.addEventListener('keypress', handleKeyPress);
+
+  // Cleanup
+  return () => {
+    document.removeEventListener('keypress', handleKeyPress);
+  };
+}, [ratings]);  // Re-add listener when ratings change
+
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-100">
       {/* Fixed Header */}
