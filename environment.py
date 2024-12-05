@@ -189,7 +189,7 @@ class QtarEnvironment:
             reward = 0
             # Reduced but still present basic rewards
             reward += self._chord_tone_reward(note, chord) * 0.75
-            reward += self._voice_leading_reward(note) * 0.75
+            reward += self._voice_leading_reward(note) * 1
             reward += self._rhythm_coherence_reward(rhythm) * 0.75
             reward += self._repetition_penalty(note) * 1.5  # Keep this higher to prevent monotony
             # When a chord is complete, check pattern formation
@@ -226,28 +226,45 @@ class QtarEnvironment:
         return best_match_score
 
     def _evaluate_motif(self, motif):
-        """Evaluate a single motif on one chord"""
+        """Evaluate a single motif on one chord with emphasis on variation"""
         if not self._has_valid_motif_structure(motif):
             return -10.0
         notes = [note[0] for note in motif]
         rhythms = [note[1] for note in motif]
         durations = [note[1] for note in motif]
-        # init reward
+
         reward = 0
-        # Melodic shape
-        reward += self._evaluate_melodic_shape(motif)
-        # Reward rhythmic patterns
-        if len(set(rhythms)) >= 3:  # At least two different note lengths
-            reward += 10
-        # 5. Check for good use of range
+
+        # Melodic shape with higher rewards for interesting contours
+        reward += self._evaluate_melodic_shape(motif) * 1.5  # Increased weight
+
+        # Reward rhythmic patterns more aggressively
+        unique_rhythms = len(set(rhythms))
+        if unique_rhythms >= 3:
+            reward += 15  # Increased from 10
+        elif unique_rhythms == 2:
+            reward += 5  # Added intermediate reward
+
+        # Enhanced range rewards
         note_range = max(notes) - min(notes)
-        if 4 <= note_range <= 12:  # Good melodic range, not too wide or narrow
+        if 4 <= note_range <= 7:  # Moderate range
             reward += 10.0
-        # 6. Penalize excessive complexity
-        if len(notes) > 8:  # Too many notes
+        elif 8 <= note_range <= 12:  # Wider range
+            reward += 15.0  # Increased reward for wider range
+
+        # Reward for note variety
+        unique_notes = len(set(notes))
+        if unique_notes >= 4:
+            reward += 20.0  # High reward for using many different notes
+        elif unique_notes == 3:
+            reward += 10.0
+
+        # Penalize excessive complexity (keep these as safeguards)
+        if len(notes) > 8:
             reward -= 10.0
-        if len(set(durations)) > 4:  # Too many different rhythmic values
+        if len(set(durations)) > 4:
             reward -= 5.0
+
         return reward
 
     def _evaluate_abab_pattern(self, current_motif, previous_motifs):
@@ -278,54 +295,70 @@ class QtarEnvironment:
                 all(abs(r1 - r2) < 0.25 for r1, r2 in zip(rhythms1, rhythms2)))
 
     def _repetition_penalty(self, note):
-        """Penalize note repetition and alternating patterns"""
+        """Enhanced penalty for repetitive patterns"""
         if len(self.current_melody) == 0:
             return 0
         penalty = 0
         note_in_octave = note % 12
-        # Immediate repetition penalty
+
+        # Immediate repetition penalty (increased)
         if note == self.current_melody[-1][0]:
-            penalty -= 10.0
+            penalty -= 15.0  # Increased from 10
             # Extra penalty for three repeated notes
             if len(self.current_melody) >= 2:
                 if note == self.current_melody[-2][0]:
-                    penalty -= 15.0
+                    penalty -= 20.0  # Increased from 15
+
         # Check for alternating patterns (like C-E-C-E)
         if len(self.current_melody) >= 3:
             recent_notes = [n[0] % 12 for n in self.current_melody[-3:]] + [note_in_octave]
             if len(recent_notes) >= 4:
                 if (recent_notes[-1] == recent_notes[-3] and
                         recent_notes[-2] == recent_notes[-4]):
-                    penalty -= 15.0  # Penalty for alternating pattern
-        # Penalize overuse in recent context (last 8 notes)
-        if len(self.current_melody) >= 7:
-            recent_notes = [n[0] % 12 for n in self.current_melody[-7:]] + [note_in_octave]
+                    penalty -= 20.0  # Increased from 15
+
+        # Penalize overuse in recent context (shortened to 6 notes for tighter control)
+        if len(self.current_melody) >= 5:
+            recent_notes = [n[0] % 12 for n in self.current_melody[-5:]] + [note_in_octave]
             note_counts = {}
             for n in recent_notes:
                 note_counts[n] = note_counts.get(n, 0) + 1
             max_occurrences = max(note_counts.values())
-            if max_occurrences > 3:
-                penalty -= (max_occurrences - 3) * 10.0
+            if max_occurrences > 2:  # Reduced threshold from 3
+                penalty -= (max_occurrences - 2) * 15.0  # Increased penalty
+
         return penalty
 
     def _novelty_reward(self, note):
-        """Reward for using new notes"""
+        """Enhanced reward for using new notes"""
         note_in_octave = note % 12
         reward = 0
-        # High reward for first use of a note
+
+        # Higher reward for first use of a note
         if note_in_octave not in self.used_notes:
-            reward += 5.0
+            reward += 10.0  # Increased from 5
             self.used_notes.add(note_in_octave)
-        # Additional reward for using less-used notes
+
+        # Enhanced reward for using less-used notes
         if len(self.current_melody) > 0:
             note_frequencies = {}
             for n, _, _ in self.current_melody:
                 n_class = n % 12
                 note_frequencies[n_class] = note_frequencies.get(n_class, 0) + 1
+
             # If this note is among the least used
             current_freq = note_frequencies.get(note_in_octave, 0)
-            if current_freq <= min(note_frequencies.values()):
-                reward += 2.0
+            if current_freq == 0:
+                reward += 5.0  # New note in current context
+            elif current_freq <= min(note_frequencies.values()):
+                reward += 3.0  # Increased from 2
+
+            # Additional reward for breaking patterns
+            if len(self.current_melody) >= 4:
+                last_notes = [n[0] % 12 for n in self.current_melody[-4:]]
+                if note_in_octave not in last_notes:
+                    reward += 2.0  # Reward for breaking recent patterns
+
         return reward
 
     def _evaluate_motif_development(self, motifs):
@@ -426,8 +459,8 @@ class QtarEnvironment:
             return 2.0  # Stepwise motion
         elif interval <= 7:
             return 1.0  # Medium leap
-        elif interval > 12:
-            return -4.0  # Penalize leaps larger than an octave
+        elif interval > 7:
+            return -5.0  # Penalize leaps larger than an octave
         return 0.0
 
     def _is_rhythmic_variation(self, motif1, motif2):
