@@ -23,10 +23,9 @@ PROGRESSIONS = {
 }
 
 RHYTHM_VALUES = [
-            0.25,  # Sixteenth note
+            # 0.25,  # Sixteenth note
             0.5,  # Eighth note
             0.75,  # Dotted eighth note
             1.0,  # Quarter note
-            1.5,  # Dotted quarter note
-            2.0  # Half note
+            # 1.5
         ]

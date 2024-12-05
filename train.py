@@ -5,7 +5,7 @@ from agent import Qtar
 import threading
 import queue
 import os
-import json
+import numpy as np
 from datetime import datetime
 
 # Create a queue for feedback
@@ -22,39 +22,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize in phase 2 for pattern training with human feedback
+# Initialize Qtar with human feedback
 qtar = Qtar(
     scale='C_MAJOR',
     progression_type='I_VI_IV_V',
-    use_human_feedback=True,
-    training_phase=2  # Phase 2 for pattern development
+    use_human_feedback=True
 )
 
-# Load pretrained model and ensure phase 1 was completed
+# Load pretrained model
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 MODEL_PATH = "models/trained_qtar_model.pt"
 
 if os.path.exists(PRETRAINED_MODEL_PATH):
     print(f"Loading pretrained model from {PRETRAINED_MODEL_PATH}")
     metadata = qtar.load_model(PRETRAINED_MODEL_PATH)
-    if metadata and 'completed_phases' in metadata:
-        if 1 not in metadata['completed_phases']:
-            raise ValueError("Pretrained model hasn't completed motif learning phase")
-        print(f"Loaded model with {metadata.get('total_motifs_learned', 0)} learned motifs")
-    qtar.current_phase = 2  # Ensure we're in phase 2
+    print(f"Loaded model with {len(qtar.env.motif_memory)} learned motifs")
 else:
     raise ValueError("No pretrained model found. Please run pretraining first.")
 
 
-@app.get("/get-phase-info")
-async def get_phase_info():
-    """Get current training phase information"""
-    motif_count = len(qtar.env.motif_memory) if hasattr(qtar.env, 'motif_memory') else 0
+@app.get("/get-training-info")
+async def get_training_info():
+    """Get current training information"""
     return {
-        "current_phase": 2,
-        "phase_description": "Pattern Development Phase",
-        "learned_motifs": motif_count,
-        "training_mode": "Learning to create ABAB/AABB patterns from motifs"
+        "learned_motifs": len(qtar.env.motif_memory),
+        "training_mode": "Melody Generation with Human Feedback",
+        "note_entropy": qtar.env._calculate_entropy_bonus(0, 0),  # Get current entropy
+        "total_episodes": qtar.total_episodes
     }
 
 
@@ -63,28 +57,32 @@ async def get_current_solo():
     """Get the current solo that needs feedback"""
     if not hasattr(get_current_solo, 'current_solo'):
         return {"status": "waiting", "message": "No solo available for feedback yet"}
+
     try:
         solo = get_current_solo.current_solo
         notes = []
         current_beat = 0
+
         for note, duration, _ in solo:
-            # Handle two octaves
-            octave = note // 12  # 0 or 1 for lower/upper octave
+            octave = note // 12
             note_in_octave = note % 12
             note_name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][note_in_octave]
+
             notes.append({
-                # TODO: fix feedback.tsx
-                "note": f"{note_name}{octave + 4}",  # Octave 4 and 5
-                # "note": f"{note_name}",  # Octave 4 and 5
+                "note": f"{note_name}{octave + 4}",
                 "duration": duration,
                 "beat": current_beat
             })
             current_beat += duration
+
+        # Calculate musical metrics
+        metrics = analyze_solo(solo)
+
         return {
             "status": "ready",
             "chords": qtar.chord_progression,
             "notes": notes,
-            "phase": "Pattern Development",
+            "metrics": metrics,
             "motifs_used": len(qtar.env.motif_memory)
         }
     except Exception as e:
@@ -96,8 +94,18 @@ async def submit_feedback(feedback: dict):
     """Submit feedback for the current solo"""
     try:
         rating = feedback["rating"]
-        qtar.env.human_feedback.add_feedback(get_current_solo.current_solo, rating)
-        feedback_queue.put(rating)
+        comments = feedback.get("comments", "")
+
+        # Store feedback with additional context
+        context = {
+            "timestamp": datetime.now().isoformat(),
+            "training_progress": qtar.total_episodes,
+            "comments": comments
+        }
+
+        qtar.env.human_feedback.add_feedback(get_current_solo.current_solo, rating, context)
+        feedback_queue.put((rating, context))
+
         return {"status": "success", "message": "Feedback received"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -106,21 +114,27 @@ async def submit_feedback(feedback: dict):
 @app.post("/train")
 async def start_training():
     try:
-        print("Starting pattern development training...")
-        solo = qtar.generate_solo()
+        print("Training with human feedback...")
+        solo = qtar.generate_solo(temperature=1.0)  # Add temperature for exploration
         get_current_solo.current_solo = solo
-        qtar.train_extensive(total_epochs=1, episodes_per_epoch=1)
-        new_solo = qtar.generate_solo()
+
+        # Train with curriculum learning
+        progress = min(1.0, qtar.total_episodes / 1000)
+        exploration_temp = max(0.5, 1.0 - progress * 0.5)  # Decrease temperature over time
+
+        qtar.train(num_episodes=1)
+        new_solo = qtar.generate_solo(temperature=exploration_temp)
         get_current_solo.current_solo = new_solo
 
-        # Include motif information in stats
         return {
             "status": "success",
             "message": "Training completed",
             "current_stats": {
                 "epsilon": qtar.epsilon,
                 "memory_size": len(qtar.memory),
-                "motifs_available": len(qtar.env.motif_memory)
+                "motifs_available": len(qtar.env.motif_memory),
+                "note_entropy": qtar.env._calculate_entropy_bonus(0, 0),
+                "exploration_temperature": exploration_temp
             }
         }
     except Exception as e:
@@ -128,38 +142,64 @@ async def start_training():
         return {"status": "error", "message": str(e)}
 
 
+def analyze_solo(solo):
+    """Analyze musical characteristics of a solo"""
+    notes = [note for note, _, _ in solo]
+    durations = [duration for _, duration, _ in solo]
+
+    # Calculate metrics
+    note_variety = len(set(notes)) / len(notes)
+    rhythm_variety = len(set(durations)) / len(durations)
+
+    # Calculate melodic contour
+    intervals = [b - a for a, b in zip(notes[:-1], notes[1:])]
+    direction_changes = sum(1 for i in range(len(intervals) - 1)
+                            if intervals[i] * intervals[i + 1] < 0)
+
+    return {
+        "note_variety": note_variety,
+        "rhythm_variety": rhythm_variety,
+        "direction_changes": direction_changes,
+        "avg_interval": np.mean(np.abs(intervals)) if intervals else 0
+    }
+
+
 def train_model():
-    """Main training loop for pattern development"""
-    total_epochs = 50
-    episodes_per_epoch = 20
+    """Main training loop with human feedback"""
     try:
-        for epoch in range(total_epochs):
-            print(f"\nEpoch {epoch + 1}/{total_epochs} (Pattern Development)")
+        episode = 0
+        while True:
+            # Generate and get feedback every 5 episodes
+            if episode % 5 == 0:
+                progress = min(1.0, qtar.total_episodes / 1000)
+                temperature = max(0.5, 1.0 - progress * 0.5)
 
-            for episode in range(episodes_per_epoch):
-                # Get human feedback every 10 episodes
-                if episode % 10 == 0:
-                    solo = qtar.generate_solo()
-                    get_current_solo.current_solo = solo
-                    print(f"\nWaiting for human feedback on pattern development...")
-                    rating = feedback_queue.get()
-                    print(f"Received feedback: {rating}")
+                solo = qtar.generate_solo(temperature=temperature)
+                get_current_solo.current_solo = solo
+                print(f"\nWaiting for human feedback (Episode {episode})...")
 
-                    # Save progress
-                    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-                    metadata = {
-                        'epoch': epoch,
-                        'episode': episode,
-                        'feedback_count': len(qtar.env.human_feedback.buffer),
-                        'motifs_available': len(qtar.env.motif_memory)
-                    }
-                    qtar.save_model(MODEL_PATH, metadata=metadata)
+                rating, context = feedback_queue.get()
+                print(f"Received feedback: {rating}")
 
-                # Regular training step
-                qtar.train_extensive(total_epochs=1, episodes_per_epoch=1)
+                # Save progress
+                os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+                metadata = {
+                    'episode': episode,
+                    'feedback_count': len(qtar.env.human_feedback.buffer),
+                    'motifs_available': len(qtar.env.motif_memory),
+                    'note_entropy': qtar.env._calculate_entropy_bonus(0, 0),
+                    'temperature': temperature
+                }
+                qtar.save_model(MODEL_PATH, metadata=metadata)
 
-            print(f"Completed epoch {epoch + 1}")
-            print(f"Available motifs: {len(qtar.env.motif_memory)}")
+            # Regular training step
+            qtar.train(episodes=1)
+            episode += 1
+
+            if episode % 50 == 0:
+                print(f"\nCompleted {episode} episodes")
+                print(f"Available motifs: {len(qtar.env.motif_memory)}")
+                print(f"Note entropy: {qtar.env._calculate_entropy_bonus(0, 0):.3f}")
 
     except Exception as e:
         print(f"Training error: {str(e)}")
@@ -175,8 +215,9 @@ if __name__ == "__main__":
     server_thread.daemon = True
     server_thread.start()
 
-    print("Starting pattern development training...")
+    print("Starting training with human feedback...")
     print("Open http://localhost:3000 to provide feedback")
+
     try:
         train_model()
     except KeyboardInterrupt:

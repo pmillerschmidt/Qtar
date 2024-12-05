@@ -33,6 +33,7 @@ const FeedbackInterface = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
+  const [isLoadingMelody, setIsLoadingMelody] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   // Add this new state
   const [isTraining, setIsTraining] = useState(false);
@@ -73,23 +74,40 @@ const FeedbackInterface = () => {
 
   const startTraining = async () => {
     setIsTraining(true);
+    setIsLoadingMelody(true);
     try {
+        // Start training
         const response = await fetch('/api/feedback', {
             method: 'PUT'
         });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const data = await response.json();
-        console.log('Training response:', data);
-        if (data.status === 'success') {
-            await fetchPhrase();
+
+        // Keep polling until we get a new melody
+        let newMelody = null;
+        while (!newMelody) {
+            const melodyResponse = await fetch('/api/feedback');
+            if (!melodyResponse.ok) {
+                throw new Error(`HTTP error! status: ${melodyResponse.status}`);
+            }
+            const melodyData = await melodyResponse.json();
+
+            // Check if we have a valid melody
+            if (melodyData.status === 'ready' && melodyData.notes && melodyData.notes.length > 0) {
+                newMelody = melodyData;
+                setPhrases([newMelody]);
+                break;
+            }
+
+            // Wait a bit before polling again
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
     } catch (error) {
         console.error('Training failed:', error);
-        // Maybe show an error message to the user
     } finally {
         setIsTraining(false);
+        setIsLoadingMelody(false);
     }
 };
 
@@ -205,48 +223,55 @@ const submitFeedback = async () => {
         <div className="max-w-3xl mx-auto w-full">
           {/* Help Section */}
           {showHelp && (
-            <div className="bg-blue-50 p-4 rounded-lg text-sm mb-4">
-              <h2 className="font-semibold mb-2">Rating Guide:</h2>
-              <ul className="space-y-1 list-disc pl-5">
-                <li>1 Star: Poor - Doesn't sound musical</li>
-                <li>2 Stars: Fair - Basic musical structure but needs improvement</li>
-                <li>3 Stars: Good - Decent musical phrase</li>
-                <li>4 Stars: Very Good - Engaging and well-structured</li>
-                <li>5 Stars: Excellent - Outstanding musical quality</li>
-              </ul>
-            </div>
+              <div className="bg-blue-50 p-4 rounded-lg text-sm mb-4">
+                <h2 className="font-semibold mb-2">Rating Guide:</h2>
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>1 Star: Poor - Doesn't sound musical</li>
+                  <li>2 Stars: Fair - Basic musical structure but needs improvement</li>
+                  <li>3 Stars: Good - Decent musical phrase</li>
+                  <li>4 Stars: Very Good - Engaging and well-structured</li>
+                  <li>5 Stars: Excellent - Outstanding musical quality</li>
+                </ul>
+              </div>
           )}
 
           {/* Phrases */}
           <div className="space-y-4">
             {phrases.map((phrase, phraseIndex) => (
-              <div
-                key={phraseIndex}
-                className="bg-white rounded-lg shadow-sm border p-4"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">
-                    Phrase {phraseIndex + 1}
-                  </h2>
-                  <button
-                    onClick={() => setIsMuted(!isMuted)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                  >
-                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                  </button>
-                </div>
+                <div
+                    key={phraseIndex}
+                    className="bg-white rounded-lg shadow-sm border p-4"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold">
+                      Phrase {phraseIndex + 1}
+                    </h2>
+                    <button
+                        onClick={() => setIsMuted(!isMuted)}
+                        className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      {isMuted ? <VolumeX className="w-5 h-5"/> : <Volume2 className="w-5 h-5"/>}
+                    </button>
+                  </div>
 
-                {/* Piano Roll Container */}
-                <div className="w-full overflow-x-auto bg-gray-50 rounded-lg p-2">
-                  <div className="min-w-[500px]">
-                    <PianoRoll
-                      phrase={phrase}
-                      isPlaying={isPlaying}
-                      currentBeat={currentBeat}
-                    />
+                  {/* Piano Roll Container with Loading State */}
+                  <div className="w-full overflow-x-auto bg-gray-50 rounded-lg p-2">
+                    {isLoadingMelody ? (
+                        <div className="min-h-[300px] flex items-center justify-center">
+                          <div
+                              className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+                        </div>
+                    ) : (
+                        <div className="min-w-[500px]">
+                          <PianoRoll
+                              phrase={phrase}
+                              isPlaying={isPlaying}
+                              currentBeat={currentBeat}
+                          />
+                        </div>
+                    )}
                   </div>
                 </div>
-              </div>
             ))}
           </div>
         </div>
@@ -258,37 +283,37 @@ const submitFeedback = async () => {
           <div className="flex items-center justify-between gap-4">
             {/* Train Model */}
             <button
-              onClick={startTraining}
-              disabled={isTraining}
-              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                onClick={startTraining}
+                disabled={isTraining}
+                className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               {isTraining ? 'Training...' : 'Train Model'}
             </button>
 
             {/* Play Button */}
             <button
-              onClick={() => playPhrase(0)}
-              className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
+                onClick={() => playPhrase(0)}
+                className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
             >
               {isPlaying ? (
-                <>
-                  <Pause className="w-5 h-5" />
-                  <span>Stop</span>
-                </>
+                  <>
+                    <Pause className="w-5 h-5"/>
+                    <span>Stop</span>
+                  </>
               ) : (
-                <>
-                  <Play className="w-5 h-5" />
-                  <span>Play</span>
-                </>
+                  <>
+                    <Play className="w-5 h-5"/>
+                    <span>Play</span>
+                  </>
               )}
             </button>
 
             {/* Star Rating */}
             <div className="flex items-center gap-1">
               {[1, 2, 3, 4, 5].map((rating) => (
-                <button
-                  key={rating}
-                  onClick={() => handleRating(0, rating)}
+                  <button
+                      key={rating}
+                      onClick={() => handleRating(0, rating)}
                   className={`p-1.5 rounded-full transition-colors ${
                     ratings[0] === rating
                       ? 'text-yellow-500'

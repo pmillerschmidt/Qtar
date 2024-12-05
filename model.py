@@ -1,29 +1,35 @@
+import torch
 import torch.nn as nn
 
 
 class QtarNetwork(nn.Module):
     def __init__(self, state_size, note_size, rhythm_size):
         super(QtarNetwork, self).__init__()
+        # Shared layers
         self.shared_layers = nn.Sequential(
-            nn.Linear(state_size, 512),  # state_size should be 15 for phase 2
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(512, 256),
+            nn.Linear(state_size, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(256, 128)
         )
 
-        # Note head now outputs 24 values instead of 12
-        self.note_head = nn.Sequential(
+        # Split note head into pitch class and octave
+        self.pitch_class_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
             nn.ReLU(),
-            nn.Linear(64, note_size)  # note_size should be 24
+            nn.Linear(64, 12)  # 12 pitch classes
         )
 
+        self.octave_head = nn.Sequential(
+            nn.Linear(128, 32),
+            nn.LayerNorm(32),
+            nn.ReLU(),
+            nn.Linear(32, 2)  # 2 octaves
+        )
+
+        # Rhythm head
         self.rhythm_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
@@ -31,18 +37,30 @@ class QtarNetwork(nn.Module):
             nn.Linear(64, rhythm_size)
         )
 
-    def forward(self, x, key_mask=None):
-        shared_features = self.shared_layers(x)
-        note_logits = self.note_head(shared_features)
-        rhythm_logits = self.rhythm_head(shared_features)
+    def forward(self, x):
+        features = self.shared_layers(x)
 
-        if key_mask is not None:
-            masked_note_logits = note_logits.clone()
-            for octave in range(2):
-                start_idx = octave * 12
-                end_idx = start_idx + 12
-                masked_note_logits[:, start_idx:end_idx] = note_logits[:, start_idx:end_idx].masked_fill(
-                    (key_mask == 0), float('-inf'))
-            return masked_note_logits, rhythm_logits
+        # Get pitch class and octave predictions
+        pitch_logits = self.pitch_class_head(features)
+        octave_logits = self.octave_head(features)
+
+        # Combine into full note prediction
+        note_logits = self._combine_pitch_octave(pitch_logits, octave_logits)
+
+        # Get rhythm prediction
+        rhythm_logits = self.rhythm_head(features)
 
         return note_logits, rhythm_logits
+
+    def _combine_pitch_octave(self, pitch_logits, octave_logits):
+        batch_size = pitch_logits.size(0)
+        full_logits = torch.zeros(batch_size, 24).to(pitch_logits.device)
+
+        # Distribute pitch probabilities across octaves
+        for octave in range(2):
+            start_idx = octave * 12
+            end_idx = start_idx + 12
+            octave_weight = torch.sigmoid(octave_logits[:, octave]).unsqueeze(-1)
+            full_logits[:, start_idx:end_idx] = pitch_logits * octave_weight
+
+        return full_logits
