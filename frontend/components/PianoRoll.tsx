@@ -2,22 +2,27 @@
 
 import React, { useRef, useEffect } from 'react';
 
-const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// Updated note definitions to include octaves
+const NOTES = [
+  'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4',
+  'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5', 'F#5', 'G5', 'G#5', 'A5', 'A#5', 'B5'
+];
+
 const TOTAL_NOTES = 24; // Two octaves
 const PIXELS_PER_BEAT = 40;
 const NOTE_HEIGHT = 20;
 
 const CHORD_NOTES = {
-  'C':  ['C', 'E', 'G'],
-  'Am': ['A', 'C', 'E'],
-  'F':  ['F', 'A', 'C'],
-  'G':  ['G', 'B', 'D']
+  'C':  ['C4', 'E4', 'G4'],
+  'Am': ['A4', 'C4', 'E4'],
+  'F':  ['F4', 'A4', 'C5'],
+  'G':  ['G4', 'B4', 'D5']
 };
 
 interface PianoRollProps {
   phrase: {
     notes: Array<{
-      note: string;
+      note: string; // Now expects format like "E4"
       duration: number;
       beat: number;
     }>;
@@ -29,6 +34,11 @@ interface PianoRollProps {
 
 const PianoRoll: React.FC<PianoRollProps> = ({ phrase, isPlaying, currentBeat }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Helper function to get note index including octave
+  const getNoteIndex = (noteWithOctave: string): number => {
+    return NOTES.indexOf(noteWithOctave);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -78,10 +88,9 @@ const PianoRoll: React.FC<PianoRollProps> = ({ phrase, isPlaying, currentBeat })
     // Draw note names on the left
     ctx.fillStyle = '#6b7280';
     ctx.font = '12px sans-serif';
-    for (let i = 0; i < TOTAL_NOTES; i++) {
-      const noteName = NOTES[i % 12];
+    NOTES.forEach((noteName, i) => {
       ctx.fillText(noteName, 5, (TOTAL_NOTES - i) * NOTE_HEIGHT - 5);
-    }
+    });
 
     // Draw chord names
     ctx.fillStyle = '#6b7280';
@@ -92,7 +101,9 @@ const PianoRoll: React.FC<PianoRollProps> = ({ phrase, isPlaying, currentBeat })
 
     // Draw notes
     phrase.notes.forEach(note => {
-      const noteIndex = NOTES.indexOf(note.note);
+      const noteIndex = getNoteIndex(note.note);
+      if (noteIndex === -1) return; // Skip invalid notes
+
       const y = (TOTAL_NOTES - 1 - noteIndex) * NOTE_HEIGHT;
       const x = note.beat * PIXELS_PER_BEAT;
       const width = note.duration * PIXELS_PER_BEAT;
@@ -119,11 +130,13 @@ const PianoRoll: React.FC<PianoRollProps> = ({ phrase, isPlaying, currentBeat })
       ctx.stroke();
     }
 
-  // Draw chord notes (lighter backgrounds)
+    // Draw chord notes (lighter backgrounds)
     phrase.chords.forEach((chord, i) => {
       const chordNotes = CHORD_NOTES[chord];
       chordNotes.forEach(noteName => {
-        const noteIndex = NOTES.indexOf(noteName);
+        const noteIndex = getNoteIndex(noteName);
+        if (noteIndex === -1) return;
+
         const y = (TOTAL_NOTES - 1 - noteIndex) * NOTE_HEIGHT;
         ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
         ctx.fillRect(i * 4 * PIXELS_PER_BEAT, y, 4 * PIXELS_PER_BEAT, NOTE_HEIGHT - 1);

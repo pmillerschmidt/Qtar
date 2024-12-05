@@ -8,10 +8,10 @@ export const AudioEngine = () => {
   const activeNodes = useRef([]);
 
   const CHORD_NOTES = {
-    'C':  ['C', 'E', 'G'],
-    'Am': ['A', 'C', 'E'],
-    'F':  ['F', 'A', 'C'],
-    'G':  ['G', 'B', 'D']
+    'C':  ['C4', 'E4', 'G4'],
+    'Am': ['A4', 'C4', 'E4'],
+    'F':  ['F4', 'A4', 'C5'],
+    'G':  ['G4', 'B4', 'D5']
   };
 
   const init = () => {
@@ -30,8 +30,28 @@ export const AudioEngine = () => {
     activeNodes.current = [];
   };
 
-  const playNote = (note, time, duration, isChord = false) => {
-    const freq = 440 * Math.pow(2, (NOTES.indexOf(note) - 9) / 12);
+  const getNoteFrequency = (noteWithOctave) => {
+    // Extract note name and octave (e.g., "C4" -> ["C", "4"])
+    const noteName = noteWithOctave.slice(0, -1);
+    const octave = parseInt(noteWithOctave.slice(-1));
+
+    // Calculate semitones from A4 (which is 440Hz)
+    const noteIndex = NOTES.indexOf(noteName);
+    if (noteIndex === -1) return 440; // Default to A4 if invalid note
+
+    // Calculate the number of semitones from A4
+    const A4_OCTAVE = 4;
+    const A4_INDEX = NOTES.indexOf('A');
+    const semitones = (octave - A4_OCTAVE) * 12 + (noteIndex - A4_INDEX);
+
+    // Calculate frequency using the equal temperament formula
+    return 440 * Math.pow(2, semitones / 12);
+  };
+
+  const playNote = (noteWithOctave, time, duration, isChord = false) => {
+    if (!audioContext.current) init();
+
+    const freq = getNoteFrequency(noteWithOctave);
     const osc = audioContext.current.createOscillator();
     const gain = audioContext.current.createGain();
 

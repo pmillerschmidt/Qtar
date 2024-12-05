@@ -73,4 +73,5 @@ visualizations/
 *.png
 
 # frontend
-frontend/.next/
+frontend/.next/*
+/.next/

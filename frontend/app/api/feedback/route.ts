@@ -33,6 +33,7 @@ export async function GET() {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
+    console.log(data)
     return NextResponse.json(data);
   } catch (error) {
     console.error('API Error:', error);
