@@ -89,7 +89,7 @@ def main():
         solo = qtar.generate_solo(temperature=args.temperature)
 
         # Analyze the solo
-        analysis = analyze_melody(solo, qtar.chord_progression)
+        analysis = analyze_melody(solo)
         score = evaluate_solo(analysis)
 
         if score > best_score:
