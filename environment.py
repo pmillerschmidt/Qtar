@@ -405,80 +405,110 @@ class QtarEnvironment:
         return reward
 
     def _rhythm_coherence_reward(self, rhythm):
-        """Enhanced reward for rhythmic patterns and strong beat emphasis"""
+        """Reward for rhythmic patterns with emphasis on strong beats and reduced syncopation"""
         if len(self.current_melody) == 0:
             return 0
         recent_rhythms = [n[1] for n in self.current_melody[-4:]] + [rhythm]
         current_beat = self.current_beat
         reward = 0
-        # Reward strong beat placement
+
+        # Stronger reward for strong beats
         if current_beat % 2 == 0:  # Strong beat
             if rhythm >= 1.0:  # Longer notes on strong beats
-                reward += 5.0
+                reward += 5.0  # Increased reward for strong beats
+            elif rhythm < 0.5:  # Small penalty for very short notes on strong beats
+                reward -= 1.0
         else:  # Weak beat
-            if rhythm < 1.0:  # Shorter notes on weak beats
-                reward += 3.0
-        # Reward rhythmic patterns
-        if len(recent_rhythms) >= 3:
-            # Check for pattern repetition
-            if recent_rhythms[-1] == recent_rhythms[-3]:  # ABA pattern
-                reward += 4.0
-            if recent_rhythms[-1] == recent_rhythms[-2]:  # AA pattern
+            if rhythm >= 1.0:  # Small penalty for longer notes on weak beats
+                reward -= 0.5
+            elif rhythm == 0.5:  # Reward eighth notes on weak beats
+                reward += 1.5
+
+        # Small penalty for off-beat syncopation
+        if current_beat % 0.5 != 0:
+            reward -= 1.0
+
+        # Reward consistent rhythmic groupings
+        if len(recent_rhythms) >= 4:
+            if all(r == 1.0 for r in recent_rhythms):  # All quarter notes
                 reward += 2.0
-        # Penalize too many short notes in succession
-        short_notes_count = sum(1 for r in recent_rhythms if r < 0.5)
-        if short_notes_count > 3:
-            reward -= 3.0
-        # Reward alternation between long and short
-        for i in range(len(recent_rhythms) - 1):
-            if recent_rhythms[i] >= 1.0 and recent_rhythms[i + 1] < 1.0:
-                reward += 2.0
+            elif all(r == 0.5 for r in recent_rhythms):  # All eighth notes
+                reward += 1.5
+
         return reward
 
     def _evaluate_motif_coherence(self, motif):
-        """Evaluate the musical coherence of a motif with emphasis on rhythm"""
+        """Evaluate musical coherence with enhanced motif analysis"""
+        notes = [n[0] for n in motif]
         rhythms = [n[1] for n in motif]
+        beats = [n[2] for n in motif]
         reward = 0
-        # Rhythmic pattern recognition
-        rhythm_patterns = {}
-        for i in range(len(rhythms) - 1):
-            pattern = (rhythms[i], rhythms[i + 1])
-            rhythm_patterns[pattern] = rhythm_patterns.get(pattern, 0) + 1
-        # Reward repeated rhythmic patterns
-        for count in rhythm_patterns.values():
-            if count >= 2:
-                reward += 5.0 * count
-        # Reward strong beat alignment
+
+        # Strong reward for strong beat alignment
         strong_beat_notes = [note for note, _, beat in motif if beat % 2 == 0]
         if len(strong_beat_notes) >= 2:
-            reward += 5.0
-        # Check for good rhythmic groupings
-        total_duration = sum(rhythms)
-        if abs(total_duration - round(total_duration)) < 0.1:  # Aligns with beat
+            reward += 4.0  # Increased from 2.0
+
+        # Analyze melodic patterns
+        intervals = [b - a for a, b in zip(notes[:-1], notes[1:])]
+        if len(set(intervals)) <= 2:  # Consistent interval pattern
             reward += 3.0
+
+        # Analyze rhythm patterns
+        rhythm_pairs = list(zip(rhythms[:-1], rhythms[1:]))
+        if any(pair == (0.5, 0.5) for pair in rhythm_pairs):  # Good eighth note groupings
+            reward += 2.0
+
+        # Reward for balanced use of note values
+        quarter_notes = sum(1 for r in rhythms if r == 1.0)
+        eighth_notes = sum(1 for r in rhythms if r == 0.5)
+        if quarter_notes >= 2 and eighth_notes >= 2:
+            reward += 3.0
+
+        # Metric alignment with extra reward for strong beats
+        strong_beat_aligned = sum(1 for beat in beats if beat % 2 == 0)
+        reward += strong_beat_aligned * 1.5
+
+        # Pattern development
+        if len(set(intervals)) == 1:  # Sequential pattern
+            reward += 3.0
+        elif len(set(intervals)) == 2:  # Alternating pattern
+            reward += 2.0
+
         return reward
 
     def _motif_development_reward(self, note, rhythm):
-        """Extended reward function with more emphasis on rhythmic motifs"""
+        """Enhanced reward function for motivic development and strong beats"""
         if len(self.current_melody) < 4:
             return 0
+        recent_notes = [n[0] for n in self.current_melody[-3:]] + [note]
         recent_rhythms = [n[1] for n in self.current_melody[-3:]] + [rhythm]
         reward = 0
-        # Rhythmic pattern rewards
-        for i in range(len(recent_rhythms) - 1):
-            if recent_rhythms[i] == recent_rhythms[i - 1]:  # Rhythmic repetition
-                reward += 3.0
-        # Strong beat emphasis
-        if self.current_beat % 2 == 0 and rhythm >= 1.0:
-            reward += 4.0
-        # Syncopation reward (shorter notes leading to strong beats)
-        if len(recent_rhythms) >= 2:
-            if recent_rhythms[-2] < 1.0 and rhythm >= 1.0 and self.current_beat % 2 == 0:
-                reward += 5.0
-        # Balance between long and short notes
-        long_notes = sum(1 for r in recent_rhythms if r >= 1.0)
-        if 1 <= long_notes <= 2:  # Good balance
+
+        # Enhanced motif recognition
+        intervals = [b - a for a, b in zip(recent_notes[:-1], recent_notes[1:])]
+
+        # Reward for interval patterns (e.g., consistent step-wise motion or arpeggios)
+        if len(set(intervals)) <= 2:  # Using similar intervals
             reward += 3.0
+
+        # Reward for melodic direction consistency
+        if all(i > 0 for i in intervals) or all(i < 0 for i in intervals):
+            reward += 2.5
+
+        # Reward for rhythmic patterns
+        if recent_rhythms[-2:] == [0.5, 0.5]:  # Eighth note pairs
+            reward += 2.0
+
+        # Strong beat emphasis with motivic context
+        if self.current_beat % 2 == 0:  # Strong beats
+            if rhythm == 1.0:  # Quarter notes on strong beats
+                reward += 4.0
+                # Extra reward if following a melodic pattern
+                if len(set(intervals)) == 1:
+                    reward += 2.0
+            elif rhythm == 0.5:  # Eighth notes on strong beats
+                reward += 2.0
 
         return reward
 

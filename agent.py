@@ -22,7 +22,8 @@ class Qtar:
                  beats_per_chord=4,
                  use_human_feedback=False,
                  batch_size=32,
-                 learning_rate=0.0005):
+                 learning_rate=0.0005,
+                 noise_std=0.1):
 
         self.chord_progression = PROGRESSIONS[progression_type]
         self.env = QtarEnvironment(
@@ -36,6 +37,7 @@ class Qtar:
         self.note_size = 24
         self.rhythm_size = len(self.env.rhythm_values)
         self.batch_size = batch_size
+        self.noise_std = noise_std
 
         # Training parameters
         self.total_episodes = 0

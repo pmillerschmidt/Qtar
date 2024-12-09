@@ -35,14 +35,6 @@ qtar = Qtar(
 PRETRAINED_MODEL_PATH = "models/pretrained_qtar_model.pt"
 MODEL_PATH = "models/trained_qtar_model.pt"
 
-if os.path.exists(PRETRAINED_MODEL_PATH):
-    print(f"Loading pretrained model from {PRETRAINED_MODEL_PATH}")
-    metadata = qtar.load_model(PRETRAINED_MODEL_PATH)
-    print(f"Loaded model with {len(qtar.env.motif_memory)} learned motifs")
-else:
-    raise ValueError("No pretrained model found. Please run pretraining first.")
-
-
 @app.get("/get-training-info")
 async def get_training_info():
     """Get current training information"""
