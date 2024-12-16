@@ -15,7 +15,7 @@ EPOCHS = {1: 100,
 
 
 def train_single_phase(qtar, phase_number, episodes_per_epoch=100):
-    """Train a single phase until performance criteria are met"""
+    # train phase until performance criterion is met
     print(f"\nStarting Phase {phase_number} Training...")
     print("Phase 1: Learning motifs on single chord" if phase_number == 1
           else "Phase 2: Developing patterns across progression")
@@ -41,7 +41,6 @@ def pretrain(
         training_phase: int = 1,
         model_path=None
 ):
-    """Pretrain through both phases sequentially"""
     all_phase_history = []
     # Initialize model in phase 1
     qtar = Qtar(

@@ -4,7 +4,6 @@ import os
 VISUALIZATION_DIR = 'visualizations'
 
 def smooth_curve(points, factor=0.8):
-    """Smooth points using exponential moving average"""
     smoothed_points = []
     for point in points:
         if smoothed_points:
@@ -15,7 +14,6 @@ def smooth_curve(points, factor=0.8):
     return smoothed_points
 
 def save_epoch(history, current_epoch, include_raw_minmax=False, training_phase=1):
-    """Save visualization of training progress at specific epoch"""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), dpi=100)
     epochs = [entry['epoch'] for entry in history]
     avg_rewards = [entry['avg_reward'] for entry in history]
