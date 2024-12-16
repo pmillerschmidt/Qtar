@@ -1,21 +1,18 @@
 
 def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_note=60):
-    """Convert the generated solo and chord progression to a MIDI file with two tracks"""
+    # solo to midi
     try:
         import pretty_midi
     except ImportError:
         print("please install pretty_midi: pip install pretty_midi")
         return
-
+    # guitar -> melody
     pm = pretty_midi.PrettyMIDI()
-
-    # Create guitar track for the solo
-    guitar = pretty_midi.Instrument(program=24)  # 24 is acoustic guitar
+    guitar = pretty_midi.Instrument(program=24)
     current_time = 0.0
-
     for note, duration, _ in melody:
-        # Create a new note
-        note_number = base_note + note  # Middle C (60) + offset
+        # new note
+        note_number = base_note + note
         note = pretty_midi.Note(
             velocity=100,
             pitch=note_number,
@@ -24,17 +21,13 @@ def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_no
         )
         guitar.notes.append(note)
         current_time += duration
-
-    # Create piano track for chords
+    # piano -> chords
     piano = pretty_midi.Instrument(program=0)  # 0 is acoustic grand piano
-
-    # Define chord notes (relative to root)
     chord_types = {
-        '': [0, 4, 7],  # Major triad
-        'm': [0, 3, 7],  # Minor triad
-        '7': [0, 4, 7, 10],  # Dominant 7th
+        '': [0, 4, 7],
+        'm': [0, 3, 7],
+        '7': [0, 4, 7, 10],
     }
-
     # Define root notes
     root_notes = {
         'C': 60,
@@ -45,11 +38,9 @@ def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_no
         'A': 69,
         'B': 71,
     }
-
     # Add chords
     chord_time = 0.0
     beats_per_chord = 4.0  # Assuming 4 beats per chord
-
     for chord in chord_progression:
         # Parse chord name and type
         if chord.endswith('m'):
@@ -61,27 +52,21 @@ def convert_to_midi(melody, chord_progression, filename="qtar_solo.mid", base_no
         else:
             root = chord
             chord_type = ''
-
         # Get root note number
         root_note = root_notes[root]
-
-        # Add each note in the chord
+        # add notes
         for note_offset in chord_types[chord_type]:
             note = pretty_midi.Note(
-                velocity=80,  # Slightly softer than the solo
+                velocity=80,
                 pitch=root_note + note_offset,
                 start=chord_time,
                 end=chord_time + beats_per_chord
             )
             piano.notes.append(note)
-
         chord_time += beats_per_chord
-
-    # Add both instruments to the MIDI file
+    # add to midi file
     pm.instruments.append(guitar)
     pm.instruments.append(piano)
-
-    # Write the MIDI file
     pm.write(filename)
     print(f"MIDI file saved as {filename}")
 
