@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Star, AlertCircle, Play, Pause, Volume2, VolumeX, ZoomIn, ZoomOut } from 'lucide-react';
+import { Star, AlertCircle, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { AudioEngine } from './AudioEngine';
 import PianoRoll from './PianoRoll';
 
@@ -60,7 +60,6 @@ const FeedbackInterface = () => {
     }
   };
 
-  // Add this useEffect to fetch initial phrase when component mounts
   useEffect(() => {
     fetchPhrase();
   }, []);
@@ -156,7 +155,7 @@ const FeedbackInterface = () => {
 
   const fetchCurrentSolo = async () => {
   try {
-    const response = await fetch('/api/feedback');  // Use the Next.js API route
+    const response = await fetch('/api/feedback');
     if (response.ok) {
       const data = await response.json();
       setPhrases([data]); // Update with current solo
@@ -243,7 +242,7 @@ const FeedbackInterface = () => {
   return () => {
     document.removeEventListener('keypress', handleKeyPress);
   };
-}, [ratings]);  // Re-add listener when ratings change
+}, [ratings]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-100">

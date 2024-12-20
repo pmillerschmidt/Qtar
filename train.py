@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Qtar with human feedback
+# init Qtar with human feedback
 qtar = Qtar(
     scale='C_MAJOR',
     progression_type='I_VI_IV_V',
@@ -48,30 +48,25 @@ async def get_training_info():
 
 @app.get("/get-current-solo")
 async def get_current_solo():
-    """Get the current solo that needs feedback"""
+    # get solo for feedback
     if not hasattr(get_current_solo, 'current_solo'):
         return {"status": "waiting", "message": "No solo available for feedback yet"}
-
     try:
         solo = get_current_solo.current_solo
         notes = []
         current_beat = 0
-
         for note, duration, _ in solo:
             octave = note // 12
             note_in_octave = note % 12
             note_name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][note_in_octave]
-
             notes.append({
                 "note": f"{note_name}{octave + 4}",
                 "duration": duration,
                 "beat": current_beat
             })
             current_beat += duration
-
-        # Calculate musical metrics
+        # calc musical metrics
         metrics = analyze_solo(solo)
-
         return {
             "status": "ready",
             "chords": qtar.chord_progression,
@@ -85,21 +80,18 @@ async def get_current_solo():
 
 @app.post("/submit-feedback")
 async def submit_feedback(feedback: dict):
-    """Submit feedback for the current solo"""
+    # get feedback about solo
     try:
         rating = feedback["rating"]
         comments = feedback.get("comments", "")
-
-        # Store feedback with additional context
+        # save feedback with context
         context = {
             "timestamp": datetime.now().isoformat(),
             "training_progress": qtar.total_episodes,
             "comments": comments
         }
-
         qtar.env.human_feedback.add_feedback(get_current_solo.current_solo, rating, context)
         feedback_queue.put((rating, context))
-
         return {"status": "success", "message": "Feedback received"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -109,17 +101,14 @@ async def submit_feedback(feedback: dict):
 async def start_training():
     try:
         print("Training with human feedback...")
-        solo = qtar.generate_solo(temperature=1.0)  # Add temperature for exploration
+        solo = qtar.generate_solo(temperature=1.0)
         get_current_solo.current_solo = solo
-
-        # Train with curriculum learning
+        # train
         progress = min(1.0, qtar.total_episodes / 1000)
-        exploration_temp = max(0.5, 1.0 - progress * 0.5)  # Decrease temperature over time
-
+        exploration_temp = max(0.5, 1.0 - progress * 0.5)  # lessen temperature over time
         qtar.train(num_episodes=1)
         new_solo = qtar.generate_solo(temperature=exploration_temp)
         get_current_solo.current_solo = new_solo
-
         return {
             "status": "success",
             "message": "Training completed",
@@ -137,19 +126,16 @@ async def start_training():
 
 
 def analyze_solo(solo):
-    """Analyze musical characteristics of a solo"""
+    # get info on solo
     notes = [note for note, _, _ in solo]
     durations = [duration for _, duration, _ in solo]
-
-    # Calculate metrics
+    # metrics
     note_variety = len(set(notes)) / len(notes)
     rhythm_variety = len(set(durations)) / len(durations)
-
-    # Calculate melodic contour
+    # melodic contour
     intervals = [b - a for a, b in zip(notes[:-1], notes[1:])]
     direction_changes = sum(1 for i in range(len(intervals) - 1)
                             if intervals[i] * intervals[i + 1] < 0)
-
     return {
         "note_variety": note_variety,
         "rhythm_variety": rhythm_variety,
@@ -159,23 +145,22 @@ def analyze_solo(solo):
 
 
 def train_model():
-    """Main training loop with human feedback"""
+    # train with HF
     try:
         episode = 0
         while True:
-            # Generate and get feedback every 5 episodes
+            # every five episodes: generate solo -> get feedback
             if episode % 5 == 0:
                 progress = min(1.0, qtar.total_episodes / 1000)
                 temperature = max(0.5, 1.0 - progress * 0.5)
-
+                # gen solo
                 solo = qtar.generate_solo(temperature=temperature)
                 get_current_solo.current_solo = solo
                 print(f"\nWaiting for human feedback (Episode {episode})...")
-
+                # get feedback
                 rating, context = feedback_queue.get()
                 print(f"Received feedback: {rating}")
-
-                # Save progress
+                # save progress
                 os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
                 metadata = {
                     'episode': episode,
@@ -185,22 +170,19 @@ def train_model():
                     'temperature': temperature
                 }
                 qtar.save_model(MODEL_PATH, metadata=metadata)
-
-            # Regular training step
+            # normal training step
             qtar.train(num_episodes=1)
             episode += 1
-
+            # print info
             if episode % 50 == 0:
                 print(f"\nCompleted {episode} episodes")
                 print(f"Available motifs: {len(qtar.env.motif_memory)}")
                 print(f"Note entropy: {qtar.env._calculate_entropy_bonus(0, 0):.3f}")
-
     except Exception as e:
         print(f"Training error: {str(e)}")
 
 
 def run_server():
-    """Run the FastAPI server"""
     uvicorn.run(app, host="0.0.0.0", port=5001)
 
 
@@ -211,19 +193,17 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_server)
     server_thread.daemon = True
     server_thread.start()
-
+    # get model (pretrained or trained)
     model_path = PRETRAINED_MODEL_PATH if args.from_pretrained else MODEL_PATH
-
     if os.path.exists(model_path):
         print(f"Loading pretrained model from {model_path}")
         metadata = qtar.load_model(model_path)
         print(f"Loaded model with {len(qtar.env.motif_memory)} learned motifs")
     else:
         raise ValueError("No pretrained model found. Please run pretraining first.")
-
     print("Starting training with human feedback...")
     print("Open http://localhost:3000 to provide feedback")
-
+    # train
     try:
         train_model()
     except KeyboardInterrupt:

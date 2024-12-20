@@ -22,7 +22,7 @@ export const AudioEngine = () => {
   const loadDrumSamples = async () => {
     try {
       const [kickResponse, hihatResponse, snareResponse] = await Promise.all([
-        fetch('./drums/kick.wav'),  // Note the ./ prefix
+        fetch('./drums/kick.wav'),
         fetch('./drums/hihat.wav'),
         fetch('./drums/snare.wav')
       ]);
@@ -93,7 +93,6 @@ export const AudioEngine = () => {
         node.stop();
         node.disconnect();
       } catch (e) {
-        // Node might have already stopped
       }
     });
     activeNodes.current = [];
@@ -103,14 +102,14 @@ export const AudioEngine = () => {
     // Extract note name and octave (e.g., "C4" -> ["C", "4"])
     const noteName = noteWithOctave.slice(0, -1);
     const octave = parseInt(noteWithOctave.slice(-1));
-    // Calculate semitones from A4 (which is 440Hz)
+    // Calculate semitones from A4
     const noteIndex = NOTES.indexOf(noteName);
     if (noteIndex === -1) return 440; // Default to A4 if invalid note
     // Calculate the number of semitones from A4
     const A4_OCTAVE = 4;
     const A4_INDEX = NOTES.indexOf('A');
     const semitones = (octave - A4_OCTAVE) * 12 + (noteIndex - A4_INDEX);
-    // Calculate frequency using the equal temperament formula
+    // Calculate frequency
     return 440 * Math.pow(2, semitones / 12);
   };
 
@@ -119,7 +118,7 @@ export const AudioEngine = () => {
     const freq = getNoteFrequency(noteWithOctave);
     const osc = audioContext.current.createOscillator();
     const gain = audioContext.current.createGain();
-    // Use different waveforms for melody and chords
+    // different waves for melody and chords
     osc.type = isChord ? 'triangle' : 'sine';
     osc.frequency.value = freq;
     osc.connect(gain);
