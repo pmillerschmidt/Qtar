@@ -1,380 +1,517 @@
+from collections import deque
+
 import numpy as np
-from collections import defaultdict
-from music_theory import CHORD_TONES, SCALE_DEGREES
+from music_theory import CHORD_TONES, SCALE_MASKS, RHYTHM_VALUES
 from feedback import HumanFeedbackBuffer
 
 
 class QtarEnvironment:
-    def __init__(self, chord_progression, beats_per_chord=4, use_human_feedback=False):
+    def __init__(self,
+                 chord_progression,
+                 scale='C_MAJOR',
+                 beats_per_chord=4,
+                 use_human_feedback=False,
+                 entropy_weight=0.1):
+        # setup
         self.chord_progression = chord_progression
         self.beats_per_chord = beats_per_chord
-        self.use_human_feedback = use_human_feedback
+        self.scale_mask = SCALE_MASKS[scale]
+        self.rhythm_values = RHYTHM_VALUES
+        # note parameter
+        self.note_size = 24  # two octaves
+        self.base_octave = 60  # start at C
+        # track state
         self.current_position = 0
         self.current_beat = 0
-
-        self.rhythm_values = [
-            0.25,  # Sixteenth note
-            0.5,  # Eighth note
-            0.75,  # Dotted eighth note
-            1.0,  # Quarter note
-            1.5,  # Dotted quarter note
-            2.0  # Half note
-        ]
-
-        self.motif_memory = defaultdict(int)
-
-        # Initialize human feedback if enabled
+        self.current_melody = []
+        self.motif_memory = []
+        self.used_notes = set()
+        # track progress
+        self.total_episodes = 0
+        self.last_rewards = deque(maxlen=100)
+        self.note_history = []
+        self.rhythm_history = []
+        self.entropy_weight = entropy_weight
+        # HF
         self.human_feedback = HumanFeedbackBuffer() if use_human_feedback else None
 
-        self.reset()
+    def _calculate_entropy_bonus(self, note, rhythm):
+        # entropy bonus -> diversity
+        # note distribution
+        note_counts = np.bincount(self.note_history if self.note_history else [], minlength=24)
+        note_probs = note_counts / max(1, len(self.note_history))
+        note_entropy = -np.sum(p * np.log(p + 1e-10) for p in note_probs if p > 0)
+        # rhythm distribution
+        rhythm_counts = np.bincount(
+            [self.rhythm_values.index(r) for r in self.rhythm_history] if self.rhythm_history else [],
+            minlength=len(self.rhythm_values)
+        )
+        rhythm_probs = rhythm_counts / max(1, len(self.rhythm_history))
+        rhythm_entropy = -np.sum(p * np.log(p + 1e-10) for p in rhythm_probs if p > 0)
+        # apply entropy weight
+        return ((note_entropy + rhythm_entropy) / 2) * self.entropy_weight
+
+    def _update_history(self, note, rhythm):
+        # update note/rhythm histories
+        self.note_history.append(note)
+        self.rhythm_history.append(rhythm)
+        # forget after a while
+        if len(self.note_history) > 1000:
+            self.note_history = self.note_history[-1000:]
+            self.rhythm_history = self.rhythm_history[-1000:]
 
     def reset(self):
+        # reset env
         self.current_position = 0
         self.current_beat = 0
-        self.current_melody = []  # List of (note, duration, beat_position) tuples
-        self.motif_memory.clear()
+        self.current_melody = []
+        self.used_notes.clear()
         return self._get_state()
 
     def _get_state(self):
+        # curr state representation
         current_chord = self.chord_progression[self.current_position]
-
-        # Include more musical context in state
         state = [
             *self._one_hot_encode_chord(current_chord),
-            self.current_beat / self.beats_per_chord,  # Normalized beat position
+            self.current_beat / self.beats_per_chord,
             self._is_strong_beat(),
-            self._get_current_phrase_position() / 16,  # Normalized phrase position
         ]
-
-        # Add recent melodic context
+        # melodic contexts
         melody_context = []
         for i in range(min(4, len(self.current_melody))):
             note, duration, _ = self.current_melody[-(i + 1)]
             melody_context.extend([
-                note % 12 / 12,  # Normalized note
-                duration / 2,  # Normalized duration
+                note / 24,  # Normalize over two octaves
+                duration / 2,
             ])
-
-        # Pad if needed
-        while len(melody_context) < 8:  # 4 notes * 2 values each
+        # pad
+        while len(melody_context) < 8:
             melody_context.extend([0, 0])
-
+        # octave context
+        if len(self.current_melody) > 0:
+            last_note = self.current_melody[-1][0]
+            in_upper_octave = 1.0 if last_note >= 12 else 0.0
+            state.append(in_upper_octave)
+        else:
+            state.append(0.0)
         return np.array(state + melody_context)
 
+    def get_learned_motifs(self):
+        # motif mem for saving
+        return self.motif_memory.copy()
+
+    def set_learned_motifs(self, motifs):
+        # load previously learned motifs
+        self.learned_phase1_motifs = motifs
+
     def _one_hot_encode_chord(self, chord):
+        # TODO: update chord vocab if using other progressions
         chord_vocab = ['C', 'Am', 'F', 'G']
         encoding = [0] * len(chord_vocab)
         encoding[chord_vocab.index(chord)] = 1
         return encoding
 
-    def _get_current_phrase_position(self):
-        """Track position within 4-bar phrase"""
-        total_beats = sum(duration for _, duration, _ in self.current_melody)
-        return total_beats % 16  # 16 beats in 4 bars
-
     def _is_strong_beat(self):
-        """Check if current beat is 1 or 3 in 4/4 time"""
-        phrase_position = self._get_current_phrase_position()
-        return phrase_position % 2 == 0
-
-    def _get_melodic_direction(self, window=3):
-        """Get recent melodic direction"""
-        if len(self.current_melody) < window:
-            return 0
-        recent_notes = [note for note, _, _ in self.current_melody[-window:]]
-        return sum(b - a for a, b in zip(recent_notes[:-1], recent_notes[1:])) / (window - 1)
+        return self.current_beat % 2 == 0
 
     def step(self, note_action, rhythm_action):
+        # get reward and step
         current_chord = self.chord_progression[self.current_position]
         duration = self.rhythm_values[rhythm_action]
-
-        # Check if note duration fits within remaining beats
-        beats_remaining = self.beats_per_chord - self.current_beat
-        if duration > beats_remaining:
-            duration = beats_remaining
-
-        # Calculate reward (includes human feedback if enabled)
-        reward = self._calculate_reward(note_action, rhythm_action, current_chord)
-
-        # Add progression bonus
-        progression_bonus = self._calculate_progression_bonus()
-
-        # Combine and normalize rewards
-        total_reward = self._normalize_reward(reward + progression_bonus)
-
-
-        # Add note to melody
+        note_action = max(0, min(note_action, 23))
+        # calc reward
+        reward = self._calculate_base_reward(note_action, duration, current_chord)
+        # update state
         self.current_melody.append((note_action, duration, self.current_beat))
-
-        # Update beat position
+        self.used_notes.add(note_action)
         self.current_beat += duration
+        # handle chord progression
         if self.current_beat >= self.beats_per_chord:
             self.current_beat = 0
             self.current_position = (self.current_position + 1) % len(self.chord_progression)
+        # progression complete -> done
+        done = (self.current_position == 0 and self.current_beat == 0)
+        if done:
+            self.total_episodes += 1
+        return self._get_state(), reward, done
 
-        # Check if episode is done (one complete progression)
-        done = self.current_position == 0 and self.current_beat == 0
-
-        return self._get_state(), total_reward, done
-
-    def _normalize_reward(self, raw_reward):
-        """Normalize rewards to prevent explosion/vanishing"""
-        MAX_REWARD = 10.0
-        return np.clip(raw_reward, -MAX_REWARD, MAX_REWARD)
-
-    def _calculate_progression_bonus(self):
-        # Reward longer coherent phrases
-        current_sequence = self.current_melody[-8:] if len(self.current_melody) >= 8 else self.current_melody
-        if len(current_sequence) >= 4:
-            # Check for consistent intervals
-            intervals = [abs(b[0] - a[0]) for a, b in zip(current_sequence[:-1], current_sequence[1:])]
-            if max(intervals) <= 4:  # All intervals are small
-                return 2.0
-
-            # Check for consistent rhythm
-            rhythms = [note[1] for note in current_sequence]
-            if len(set(rhythms)) <= 2:  # Using only 1-2 rhythm values
-                return 1.5
-
-        return 0.0
-
-    def _calculate_reward(self, note, rhythm, chord):
-        base_reward = self._calculate_base_reward(note, rhythm, chord)
-
-        if self.use_human_feedback and self.human_feedback and len(self.current_melody) >= 4:
-            # Get human feedback influence from similar sequences
-            recent_sequence = self.current_melody[-4:]
-            similar_melodies = self.human_feedback.get_similar_melodies(recent_sequence)
-
-            if similar_melodies:
-                # Weight human feedback by similarity
-                weighted_feedback = sum(sim * rating for sim, _, rating in similar_melodies)
-                total_sim = sum(sim for sim, _, _ in similar_melodies)
-
-                if total_sim > 0:
-                    human_reward = weighted_feedback / total_sim
-                    # Combine base reward with human feedback
-                    return 0.7 * base_reward + 0.3 * human_reward
-
+    def _incorporate_human_feedback(self, base_reward):
+        # get human feedback and incorporate into reward
+        if not self.human_feedback or len(self.current_melody) < 4:
+            return base_reward
+        # HF for similar melodies
+        recent_sequence = self.current_melody[-4:]
+        similar_melodies = self.human_feedback.get_similar_melodies(recent_sequence)
+        if similar_melodies:
+            # weighted HF by similarity
+            weighted_feedback = sum(sim * rating for sim, _, rating in similar_melodies)
+            total_sim = sum(sim for sim, _, _ in similar_melodies)
+            if total_sim > 0:
+                human_reward = weighted_feedback / total_sim
+                # base reward + human feedback (70-30 split)
+                return 0.7 * base_reward + 0.3 * human_reward
         return base_reward
 
     def _calculate_base_reward(self, note, rhythm, chord):
+        # dynamically calc base reward based on training progress
+        progress = min(1.0, self.total_episodes / 1000)
         reward = 0
-        note_in_octave = note % 12
-
-        # 1. Chord Tone Emphasis (Increased rewards)
-        chord_tones = CHORD_TONES[chord]
-        if note_in_octave in chord_tones:
-            if note_in_octave == chord_tones[0]:  # root
-                reward += 4.0 if self._is_strong_beat() else 2.0  # Doubled from previous
-            else:  # third and fifth
-                reward += 3.0 if self._is_strong_beat() else 1.0  # Doubled from previous
-
-        # 2. Scale Context (Increased punishment)
-        scale = SCALE_DEGREES[chord]
-        if note_in_octave in scale:
-            reward += 1.0  # Increased from 0.5
-        else:
-            reward -= 3.0  # Much stronger penalty for out-of-scale notes
-
-        # 3. Variation Reward
-        if len(self.current_melody) > 0:
-            recent_notes = [n[0] % 12 for n in self.current_melody[-4:]]
-            if note_in_octave not in recent_notes:
-                reward += 2.0  # Reward for playing different notes
-            else:
-                # Count repetitions in recent notes
-                repetitions = recent_notes.count(note_in_octave)
-                if repetitions > 1:
-                    reward -= repetitions * 3.0  # Increased penalty (was 1.0)
-
-                # Additional penalty for immediate repetition
-                if note_in_octave == (self.current_melody[-1][0] % 12):
-                    reward -= 4.0  # Strong penalty for repeating the previous note
-
-                # Even stronger penalty for three same notes in a row
-                if len(recent_notes) >= 2 and note_in_octave == recent_notes[-1] == recent_notes[-2]:
-                    reward -= 6.0  # Very strong penalty for three repetitions
-
-        # 4. Enhanced Motif Development
-        if len(self.current_melody) >= 4:
-            # Get current motif (last 4 notes)
-            current_motif = tuple(n[0] % 12 for n in self.current_melody[-4:])
-
-            # Reward for motif creation
-            if current_motif not in self.motif_memory:
-                reward += 3.0  # New motif bonus
-                self.motif_memory[current_motif] = 1
-            else:
-                # Check for motif transformation
-                for stored_motif in self.motif_memory:
-                    if self._is_motif_transformation(current_motif, stored_motif):
-                        reward += 4.0  # Reward for creative variation
-                        break
-
-        # 5. Voice Leading (Keep existing logic but adjust rewards)
-        if len(self.current_melody) > 0:
-            prev_note = self.current_melody[-1][0]
-            interval = abs(note - prev_note)
-
-            if interval <= 2:
-                reward += 3.0  # Increased from 2.0
-            elif interval <= 4:
-                reward += 1.5  # Increased from 1.0
-            elif interval > 7:
-                reward -= 3.0  # Increased from 2.0
-
-            # Resolution of large leaps
-            if len(self.current_melody) >= 2:
-                previous_interval = abs(self.current_melody[-1][0] - self.current_melody[-2][0])
-                if previous_interval > 4 and interval <= 2:
-                    reward += 3.0  # Increased from 2.0
-
-        # 4. Phrase Structure
-        current_phrase_length = sum(duration for _, duration, _ in self.current_melody[-8:])
-        if 4 <= current_phrase_length <= 8:  # Reward natural phrase lengths
-            reward += 1.0
-
-        # 5. Penalize repetition of same note
-        if len(self.current_melody) > 0 and note == self.current_melody[-1][0]:
-            reward -= 1.0
-
-        # 6. Scale Context
-        scale = SCALE_DEGREES[chord]
-        if note_in_octave in scale:
-            reward += 0.5
-
-        # 7. Melodic Direction Changes
+        # Basic musicality rewards (decrease over time)
+        basic_weight = 1.0 - (0.3 * progress)
+        reward += self._chord_tone_reward(note, chord) * basic_weight
+        reward += self._voice_leading_reward(note) * 2 * basic_weight
+        reward += self._rhythm_coherence_reward(rhythm) * (1.5 + 0.5 * progress)
+        reward += self._repetition_penalty(note) * (1.0 + 0.5 * progress)
+        reward += self._calculate_position_penalty(note) * (0.8 + 0.4 * progress)
+        # add cumulative leap penalty (want smaller jumps)
+        if len(self.current_melody) >= 2:
+            last_two_intervals = [abs(b[0] - a[0]) for a, b in zip(self.current_melody[-2:],
+                                                                   self.current_melody[-1:] + [
+                                                                       (note, rhythm, self.current_beat)])]
+            if all(i > 4 for i in last_two_intervals):
+                reward -= 5.0  # Strong penalty for consecutive leaps
+        # motif development rewards (increase over time)
+        motif_weight = 0.2 + (0.8 * progress)
         if len(self.current_melody) >= 3:
-            direction = self._get_melodic_direction()
-            if -2 <= direction <= 2:  # Reward balanced melodic contour
-                reward += 0.5
-
-        # Add new musical evaluations
-        tension = self._calculate_tension(note_in_octave,
-                                          [n[0] for n in self.current_melody[-2:]])
-        reward -= tension  # Penalize excessive tension
-
-        reward += self._evaluate_rhythm_pattern(rhythm, self.current_beat)
-        reward += self._analyze_contour()
-        reward += self._calculate_target_resolution(note_in_octave, chord)
-
-        # Add long-term structure rewards
-        if len(self.current_melody) >= 16:
-            # Reward for completing full phrases
-            if len(self.current_melody) % 16 == 0:
-                reward += 5.0
-
-            # Reward for theme and variation
-            if self._is_theme_and_variation():
-                reward += 10.0
-
+            reward += self._melodic_context_reward(note) * motif_weight
+            reward += self._motif_development_reward(note, rhythm) * motif_weight
+        # pattern formation rewards (increase over time)
+        pattern_weight = 0.1 + (0.9 * progress)
+        if self._is_chord_complete(rhythm):
+            current_motif = self._get_current_chord_notes() + [(note, rhythm, self.current_beat)]
+            reward += self._evaluate_pattern_formation(current_motif) * pattern_weight
+            # save successful motifs
+            if reward > 30:
+                self._store_motif(current_motif)
         return reward
 
-    def _is_motif_transformation(self, motif1, motif2):
-        """Check if motif2 is a transformation of motif1"""
-        if len(motif1) != len(motif2):
-            return False
+    def _melodic_context_reward(self):
+        recent_notes = [n[0] for n in self.current_melody[-3:]]
+        intervals = [b - a for a, b in zip(recent_notes[:-1], recent_notes)]
+        # reward melodic direction changes
+        direction_changes = sum(1 for i in range(len(intervals) - 1)
+                                if intervals[i] * intervals[i + 1] < 0)
+        # reward balanced interval sizes
+        avg_interval = sum(abs(i) for i in intervals) / len(intervals)
+        interval_balance = 1.0 if 2 <= avg_interval <= 4 else 0.5
+        return direction_changes + interval_balance
 
-        # Check for transposition
-        intervals1 = [b - a for a, b in zip(motif1[:-1], motif1[1:])]
-        intervals2 = [b - a for a, b in zip(motif2[:-1], motif2[1:])]
-        if intervals1 == intervals2:
+    def _calculate_position_penalty(self, note):
+        # balance melody around middle C
+        center = 11.5
+        distance_from_center = abs(note - center)
+        # penalty for distance from center (stronger penalty for extreme ranges)
+        position_penalty = -(distance_from_center ** 2) / 50
+        # distribution across octaves
+        if len(self.note_history) > 10:
+            lower_octave_count = sum(1 for n in self.note_history[-20:] if n < 12)
+            upper_octave_count = sum(1 for n in self.note_history[-20:] if n >= 12)
+            # penalty for imbalanced octave usage
+            octave_ratio = min(lower_octave_count, upper_octave_count) / max(lower_octave_count,
+                                                                             upper_octave_count) if max(
+                lower_octave_count, upper_octave_count) > 0 else 1
+            distribution_bonus = octave_ratio * 2
+            return position_penalty + distribution_bonus
+        return position_penalty
+
+    def _repetition_penalty(self, note):
+        # penalize excessive repetition
+        if len(self.current_melody) == 0:
+            return 0
+        penalty = 0
+        note_in_octave = note % 12
+        # short term repetition penalty
+        if note == self.current_melody[-1][0]:
+            penalty -= 4.0
+            if len(self.current_melody) >= 2:
+                if note == self.current_melody[-2][0]:
+                    penalty -= 6.0
+        # alternating pattern repetition penalty
+        if len(self.current_melody) >= 3:
+            recent_notes = [n[0] % 12 for n in self.current_melody[-3:]] + [note_in_octave]
+            if len(recent_notes) >= 4:
+                if (recent_notes[-1] == recent_notes[-3] and
+                        recent_notes[-2] == recent_notes[-4]):
+                    penalty -= 4.0
+        return penalty
+
+    def _is_good_transformation(self, motif1, motif2):
+        # transposition
+        if self._is_transposition(motif1, motif2):
             return True
-
-        # Check for inversion
-        if intervals1 == [-x for x in reversed(intervals2)]:
+        # rhythmic variation
+        if self._is_rhythmic_variation(motif1, motif2):
             return True
-
-        # Check for retrograde
-        if motif1 == tuple(reversed(motif2)):
-            return True
-
         return False
 
-    def _calculate_tension(self, note, prev_notes):
-        """Calculate tension level of current note in context"""
-        tension = 0
-        if len(prev_notes) >= 2:
-            # Tension increases with dissonant intervals
-            intervals = [abs(note - n) % 12 for n in prev_notes[-2:]]
-            dissonances = [i for i in intervals if i in [1, 2, 6, 10, 11]]
-            tension += len(dissonances) * 0.5
+    def _is_chord_complete(self, rhythm):
+        return self.current_beat + rhythm == self.beats_per_chord
 
-            # Tension from repeated patterns
-            if intervals[0] == intervals[1]:
-                tension += 0.5
-        return tension
+    def _get_current_chord_notes(self):
+        # notes from chord
+        current_chord_notes = []
+        total_duration = 0
+        # backwards until hit different chord
+        for note in reversed(self.current_melody):
+            if total_duration + note[1] > self.beats_per_chord:
+                break
+            current_chord_notes.insert(0, note)
+            total_duration += note[1]
+        return current_chord_notes
 
-    def _evaluate_rhythm_pattern(self, rhythm, current_beat):
-        """Evaluate rhythmic interest"""
+    def _chord_tone_reward(self, note, chord):
+        # basic harmony reward
+        note_in_octave = note % 12
+        chord_tones = CHORD_TONES[chord]
         reward = 0
-        if len(self.current_melody) >= 4:
-            recent_rhythms = [n[1] for n in self.current_melody[-4:]]
-
-            # Reward syncopation
-            if current_beat % 1 != 0 and rhythm > 0.5:
+        if self._is_strong_beat():
+            if note_in_octave == chord_tones[0]:  # root note
+                reward += 2.0
+            elif note_in_octave in chord_tones:  # other chord tones
                 reward += 1.0
-
-            # Reward rhythmic variety
-            unique_rhythms = len(set(recent_rhythms))
-            reward += unique_rhythms * 0.5
-
-            # Penalize too many short notes
-            if rhythm <= 0.25 and all(r <= 0.25 for r in recent_rhythms):
-                reward -= 2.0
+            else:  # non-chord tone on strong beat
+                reward -= 1.0
+        else:  # weak beat
+            if note_in_octave in chord_tones:
+                reward += 1.0
         return reward
 
-    def _analyze_contour(self):
-        """Analyze melodic contour patterns"""
-        if len(self.current_melody) >= 5:
-            notes = [n[0] for n in self.current_melody[-5:]]
-            directions = []
-            for i in range(len(notes) - 1):
-                if notes[i + 1] > notes[i]:
-                    directions.append(1)
-                elif notes[i + 1] < notes[i]:
-                    directions.append(-1)
-                else:
-                    directions.append(0)
+    def _voice_leading_reward(self, note):
+        # basic voice leading reward
+        if len(self.current_melody) == 0:
+            return 0
+        prev_note = self.current_melody[-1][0]
+        interval = abs(note - prev_note)
+        if interval == 0:
+            return -1.0  # penalty for repetition
+        elif interval == 1:
+            return 3.0  # reward for half steps
+        elif interval == 2:
+            return 2.0  # reward for whole steps
+        elif interval <= 4:
+            return 1.0  # low reward for small leaps (thirds)
+        elif interval <= 7:
+            return 0.0  # neutral for perfect fourths/fifths
+        elif interval <= 10:
+            return -2.0  # penalty for large leaps
+        else:
+            return -5.0  # large penalty for very large leaps
 
-            # Reward for arch shapes
-            if directions == [1, 1, -1, -1]:  # ascending then descending
-                return 3.0
-            elif directions == [-1, -1, 1, 1]:  # descending then ascending
-                return 2.0
-        return 0
-
-    def _calculate_target_resolution(self, note, chord):
-        """Calculate reward for resolving to target notes"""
-        chord_tones = CHORD_TONES[chord]
-        prev_notes = [n[0] % 12 for n in self.current_melody[-3:]] if len(self.current_melody) >= 3 else []
-
-        if prev_notes:
-            # Resolution to root after leading tone
-            if prev_notes[-1] % 12 == (chord_tones[0] - 1) % 12 and note % 12 == chord_tones[0]:
-                return 4.0
-            # Resolution to third after suspension
-            if prev_notes[-1] % 12 == (chord_tones[1] + 1) % 12 and note % 12 == chord_tones[1]:
-                return 3.0
-        return 0
-
-    def _is_theme_and_variation(self):
-        """Check if current phrase is a variation of an earlier phrase"""
-        if len(self.current_melody) < 32:
+    def _is_rhythmic_variation(self, motif1, motif2):
+        # motif2 is rhythmic variation of motif1
+        if len(motif1) != len(motif2):
             return False
+        # pitch intervals (should be same)
+        intervals1 = [b[0] - a[0] for a, b in zip(motif1[:-1], motif1[1:])]
+        intervals2 = [b[0] - a[0] for a, b in zip(motif2[:-1], motif2[1:])]
+        if intervals1 != intervals2:
+            return False
+        # rhythms (should be different but related)
+        rhythms1 = [note[1] for note in motif1]
+        rhythms2 = [note[1] for note in motif2]
+        if rhythms1 == rhythms2:
+            return False
+        # total duration is same
+        if abs(sum(rhythms1) - sum(rhythms2)) > 0.01:
+            return False
+        # rhythms are related (e.g., divided or combined)
+        return True
 
-        current_phrase = self.current_melody[-16:]
-        previous_phrase = self.current_melody[-32:-16]
+    def _is_transposition(self, motif1, motif2):
+        # motif2 is transposition of motif1 -> True
+        if len(motif1) != len(motif2):
+            return False
+        # intervals between consecutive notes
+        intervals1 = [b[0] - a[0] for a, b in zip(motif1[:-1], motif1[1:])]
+        intervals2 = [b[0] - a[0] for a, b in zip(motif2[:-1], motif2[1:])]
+        # intervals (should be identical)
+        return intervals1 == intervals2
 
-        # Compare rhythmic profile
-        current_rhythms = [n[1] for n in current_phrase]
-        previous_rhythms = [n[1] for n in previous_phrase]
-        rhythm_similarity = sum(1 for a, b in zip(current_rhythms, previous_rhythms) if abs(a - b) < 0.25)
+    def _get_previous_chord_motifs(self):
+        # motifs from other chords in prog
+        motifs = []
+        current_motif = []
+        total_duration = 0
+        for note in reversed(self.current_melody[:-1]):  # exclude current motif
+            current_motif.insert(0, note)
+            total_duration += note[1]
+            if abs(total_duration - self.beats_per_chord) < 0.01:
+                motifs.insert(0, current_motif)
+                current_motif = []
+                total_duration = 0
+        return motifs
 
-        # Compare melodic profile
-        current_intervals = [b[0] - a[0] for a, b in zip(current_phrase[:-1], current_phrase[1:])]
-        previous_intervals = [b[0] - a[0] for a, b in zip(previous_phrase[:-1], previous_phrase[1:])]
-        interval_similarity = sum(1 for a, b in zip(current_intervals, previous_intervals) if abs(a - b) <= 2)
+    def _evaluate_pattern_formation(self, current_motif):
+        reward = 0
+        # motif evaluation
+        reward += self._evaluate_motif_complexity(current_motif)
+        reward += self._evaluate_motif_coherence(current_motif)
+        # comparison with previous motifs
+        previous_motifs = self._get_previous_chord_motifs()
+        if previous_motifs:
+            relation_reward = self._evaluate_motif_relationships(current_motif, previous_motifs)
+            reward += relation_reward
+        return reward
 
-        return rhythm_similarity >= 12 and interval_similarity >= 10
+    def _evaluate_motif_complexity(self, motif):
+        if not motif:
+            return 0
+        notes = [note[0] for note in motif]
+        rhythms = [note[1] for note in motif]
+        # melodic complexity
+        intervals = [abs(b - a) for a, b in zip(notes[:-1], notes[1:])]
+        unique_intervals = len(set(intervals))
+        avg_interval = sum(intervals) / len(intervals) if intervals else 0
+        # rhythmic complexity
+        unique_rhythms = len(set(rhythms))
+        rhythm_variety = unique_rhythms / len(rhythms)
+        direction_changes = sum(1 for i in range(len(intervals) - 1)
+                                if (intervals[i + 1] - intervals[i]) != 0)
+        complexity = (unique_intervals * 2 +
+                      (avg_interval if 2 <= avg_interval <= 5 else 0) +
+                      rhythm_variety * 10 +
+                      direction_changes * 3)
+        return min(complexity, 30)  # clip reward
+
+    def _evaluate_motif_relationships(self, current_motif, previous_motifs):
+        # compare motif to previous motifs
+        reward = 0
+        # relationships with recent motifs
+        for prev_motif in previous_motifs[-3:]:
+            similarity = self._calculate_motif_similarity(current_motif, prev_motif)
+            # reward moderate similarity
+            if 0.3 <= similarity <= 0.7:
+                reward += 15
+            elif similarity > 0.9:  # penalize too much similarity
+                reward -= 10
+            #  reward good transformations
+            if self._is_good_transformation(current_motif, prev_motif):
+                reward += 20
+        return reward
+
+    def _rhythm_coherence_reward(self, rhythm):
+        if len(self.current_melody) == 0:
+            return 0
+        recent_rhythms = [n[1] for n in self.current_melody[-4:]] + [rhythm]
+        current_beat = self.current_beat
+        reward = 0
+        if current_beat % 2 == 0:  # strong beat
+            if rhythm >= 1.0:  # long notes on strong beats
+                reward += 5.0
+            elif rhythm < 0.5:  # penalty for very short notes on strong beats
+                reward -= 1.0
+        else:  # weak beat
+            if rhythm >= 1.0:  # penalty for long notes on weak beats
+                reward -= 0.5
+            elif rhythm == 0.5:  # reward eighth notes on weak beats
+                reward += 1.5
+        # penalty for off-beat syncopation
+        if current_beat % 0.5 != 0:
+            reward -= 1.0
+        # reward consistent rhythmic groupings
+        if len(recent_rhythms) >= 4:
+            if all(r == 1.0 for r in recent_rhythms):  # quarter notes
+                reward += 2.0
+            elif all(r == 0.5 for r in recent_rhythms):  # eighth notes
+                reward += 1.5
+        return reward
+
+    def _evaluate_motif_coherence(self, motif):
+        notes = [n[0] for n in motif]
+        rhythms = [n[1] for n in motif]
+        beats = [n[2] for n in motif]
+        reward = 0
+        # reward for strong beat alignment
+        strong_beat_notes = [note for note, _, beat in motif if beat % 2 == 0]
+        if len(strong_beat_notes) >= 2:
+            reward += 4.0
+        # melodic patterns
+        intervals = [b - a for a, b in zip(notes[:-1], notes[1:])]
+        if len(set(intervals)) <= 2:
+            reward += 3.0
+        # rhythmic patterns
+        rhythm_pairs = list(zip(rhythms[:-1], rhythms[1:]))
+        if any(pair == (0.5, 0.5) for pair in rhythm_pairs):
+            reward += 2.0
+        # reward balanced use of note values
+        quarter_notes = sum(1 for r in rhythms if r == 1.0)
+        eighth_notes = sum(1 for r in rhythms if r == 0.5)
+        if quarter_notes >= 2 and eighth_notes >= 2:
+            reward += 3.0
+        strong_beat_aligned = sum(1 for beat in beats if beat % 2 == 0)
+        reward += strong_beat_aligned * 1.5
+        # pattern development
+        if len(set(intervals)) == 1:  # sequence
+            reward += 3.0
+        elif len(set(intervals)) == 2:  # alternating
+            reward += 2.0
+        return reward
+
+    def _motif_development_reward(self, note, rhythm):
+        if len(self.current_melody) < 4:
+            return 0
+        recent_notes = [n[0] for n in self.current_melody[-3:]] + [note]
+        recent_rhythms = [n[1] for n in self.current_melody[-3:]] + [rhythm]
+        reward = 0
+        # motif recognition
+        intervals = [b - a for a, b in zip(recent_notes[:-1], recent_notes[1:])]
+        # reward interval patterns (e.g., consistent step-wise motion or arpeggios)
+        if len(set(intervals)) <= 2:  # similar intervals
+            reward += 3.0
+        # reward melodic direction consistency
+        if all(i > 0 for i in intervals) or all(i < 0 for i in intervals):
+            reward += 2.5
+        # reward  rhythmic patterns
+        if recent_rhythms[-2:] == [0.5, 0.5]:
+            reward += 2.0
+        # strong beat emphasis with motivic context
+        if self.current_beat % 2 == 0:
+            if rhythm == 1.0:
+                reward += 4.0
+                if len(set(intervals)) == 1:
+                    reward += 2.0
+            elif rhythm == 0.5:  #
+                reward += 2.0
+        return reward
+
+    def _calculate_motif_similarity(self, motif1, motif2):
+        # similarity between motifs
+        if len(motif1) != len(motif2):
+            return 0.0
+        # extract notes
+        notes1 = motif1 if isinstance(motif1[0], (int, float)) else [note[0] for note in motif1]
+        notes2 = motif2 if isinstance(motif2[0], (int, float)) else [note[0] for note in motif2]
+        # compare intervals
+        intervals1 = [b - a for a, b in zip(notes1[:-1], notes1[1:])]
+        intervals2 = [b - a for a, b in zip(notes2[:-1], notes2[1:])]
+        # calc interval similarity
+        interval_similarity = sum(1 for a, b in zip(intervals1, intervals2)
+                                  if abs(a - b) <= 1) / len(intervals1)
+        # compare contours
+        contour1 = [1 if i > 0 else -1 if i < 0 else 0 for i in intervals1]
+        contour2 = [1 if i > 0 else -1 if i < 0 else 0 for i in intervals2]
+        contour_similarity = sum(1 for a, b in zip(contour1, contour2)
+                                 if a == b) / len(contour1)
+        return (interval_similarity + contour_similarity) / 2
+
+    def _store_motif(self, motif):
+        # save unique motifs
+        if len(motif) < 4:
+            return
+        # calc similarity with existing motifs
+        max_similarity = 0
+        if self.motif_memory:
+            similarities = [self._calculate_motif_similarity(motif, m) for m in self.motif_memory]
+            max_similarity = max(similarities)
+        # store if unique
+        if max_similarity < 0.7:
+            self.motif_memory.append(motif)
+            # update histories
+            notes = [n[0] for n in motif]
+            rhythms = [n[1] for n in motif]
+            self.note_history.extend(notes)
+            self.rhythm_history.extend(rhythms)
+            # forget after a while
+            if len(self.note_history) > 1000:
+                self.note_history = self.note_history[-1000:]
+                self.rhythm_history = self.rhythm_history[-1000:]
